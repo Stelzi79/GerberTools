@@ -18,7 +18,7 @@ namespace GerberLibrary.Core
 {
     public class GerberSet
     {
-        public PolyLineSet.Bounds BoundingBox = new PolyLineSet.Bounds();
+        public Bounds BoundingBox = new Bounds();
         public List<String> Errors = new List<string>();
 
         public bool HasLoadedOutline = false;
@@ -108,15 +108,15 @@ namespace GerberLibrary.Core
             }
         }
 
-        public ParsedGerber AddBoardToSet(string _originalfilename, bool forcezerowidth = false, bool precombinepolygons = false, double drillscaler = 1.0)
+        public ParsedGerber AddBoardToSet(ProgressLog log, string _originalfilename, bool forcezerowidth = false, bool precombinepolygons = false, double drillscaler = 1.0)
         {
             if (Streams.ContainsKey(_originalfilename))
             {
-                return AddBoardToSet(Streams[_originalfilename], _originalfilename, forcezerowidth, precombinepolygons, drillscaler);
+                return AddBoardToSet(log, Streams[_originalfilename], _originalfilename, forcezerowidth, precombinepolygons, drillscaler) ;
             }
             return null;
         }
-        public ParsedGerber AddBoardToSet(MemoryStream MS, string _originalfilename, bool forcezerowidth = false, bool precombinepolygons = false, double drillscaler = 1.0)
+        public ParsedGerber AddBoardToSet(ProgressLog log, MemoryStream MS, string _originalfilename, bool forcezerowidth = false, bool precombinepolygons = false, double drillscaler = 1.0)
         {
             Streams[_originalfilename] = MS;
             try
@@ -140,11 +140,11 @@ namespace GerberLibrary.Core
                 if (FileType == BoardFileType.Drill)
                 {
                     if (Gerber.ExtremelyVerbose) Console.WriteLine("Log: Drill file: {0}", _originalfilename);
-                    PLS = PolyLineSet.LoadExcellonDrillFileFromStream(new StreamReader(MS), _originalfilename, false, drillscaler);
+                    PLS = PolyLineSet.LoadExcellonDrillFileFromStream(log, new StreamReader(MS), _originalfilename, false, drillscaler);
                     MS.Seek(0, SeekOrigin.Begin);
 
                     ExcellonFile EF = new ExcellonFile();
-                    EF.Load(new StreamReader(MS), drillscaler);
+                    EF.Load(log, new StreamReader(MS), drillscaler);
                     Excellons.Add(EF);
                 }
                 else
@@ -160,7 +160,7 @@ namespace GerberLibrary.Core
                     }
                     State.PreCombinePolygons = precombinepolygons;
 
-                    PLS = PolyLineSet.LoadGerberFileFromStream(new StreamReader(MS), _originalfilename, forcezerowidth, false, State);
+                    PLS = PolyLineSet.LoadGerberFileFromStream(log, new StreamReader(MS), _originalfilename, forcezerowidth, false, State);
                     MS.Seek(0, SeekOrigin.Begin);
 
                     PLS.Side = State.Side;
@@ -224,7 +224,7 @@ namespace GerberLibrary.Core
                 zerowidth = true;
                 precombine = true;
             }
-            AddBoardToSet(MS, aname, zerowidth, precombine, drillscaler);
+            AddBoardToSet(Logger, MS, aname, zerowidth, precombine, drillscaler);
         }
         public void CheckForOutlineFiles(ProgressLog Logger)
         {
@@ -304,7 +304,7 @@ namespace GerberLibrary.Core
 
             List<ParsedGerber> DrillFiles = new List<ParsedGerber>();
             List<ParsedGerber> DrillFilesToReload = new List<ParsedGerber>();
-            PolyLineSet.Bounds BB = new PolyLineSet.Bounds();
+            Bounds BB = new Bounds();
             foreach (var a in PLSs)
             {
                 if (a.Layer == BoardLayer.Drill)
@@ -330,7 +330,7 @@ namespace GerberLibrary.Core
 
 
 
-            BoundingBox = new PolyLineSet.Bounds();
+            BoundingBox = new Bounds();
             foreach (var a in PLSs)
             {
                 //   Console.WriteLine("Progress: Adding board {6} to box::{0:N2},{1:N2} - {2:N2},{3:N2} -> {4:N2},{5:N2}", a.BoundingBox.TopLeft.X, a.BoundingBox.TopLeft.Y, a.BoundingBox.BottomRight.X, a.BoundingBox.BottomRight.Y, a.BoundingBox.Width(), a.BoundingBox.Height(), Path.GetFileName(a.Name));
@@ -345,7 +345,7 @@ namespace GerberLibrary.Core
         {
             List<ParsedGerber> DrillFiles = new List<ParsedGerber>();
             List<Tuple<double, ParsedGerber>> DrillFilesToReload = new List<Tuple<double, ParsedGerber>>();
-            PolyLineSet.Bounds BB = new PolyLineSet.Bounds();
+            Bounds BB = new Bounds();
             foreach (var a in PLSs)
             {
                 if (a.Layer == BoardLayer.Drill)
@@ -391,7 +391,7 @@ namespace GerberLibrary.Core
                 }
             }
 
-            BoundingBox = new PolyLineSet.Bounds();
+            BoundingBox = new Bounds();
             foreach (var a in PLSs)
             {
                 //Console.WriteLine("Progress: Adding board {6} to box::{0:N2},{1:N2} - {2:N2},{3:N2} -> {4:N2},{5:N2}", a.BoundingBox.TopLeft.X, a.BoundingBox.TopLeft.Y, a.BoundingBox.BottomRight.X, a.BoundingBox.BottomRight.Y, a.BoundingBox.Width(), a.BoundingBox.Height(), Path.GetFileName( a.Name));
@@ -401,9 +401,9 @@ namespace GerberLibrary.Core
                 BoundingBox.AddBox(a.BoundingBox);
             }
         }
-        public PolyLineSet.Bounds GetOutlineBoundingBox()
+        public Bounds GetOutlineBoundingBox()
         {
-            PolyLineSet.Bounds B = new PolyLineSet.Bounds();
+            Bounds B = new Bounds();
             int i = 0;
             foreach (var a in PLSs)
             {
@@ -416,7 +416,7 @@ namespace GerberLibrary.Core
             if (i == 0) return BoundingBox;
             return B;
         }
-        private bool InventOutline()
+        private bool InventOutline(ProgressLog log)
         {
             double largest = 0;
             ParsedGerber Largest = null;
@@ -441,14 +441,14 @@ namespace GerberLibrary.Core
             bool zerowidth = true;
             bool precombine = true;
 
-            Console.WriteLine("Note: Using {0} to extract outline file", Path.GetFileName(Largest.Name));
+            log.AddString(String.Format("Note: Using {0} to extract outline file", Path.GetFileName(Largest.Name)));
             if (Largest.Layer == BoardLayer.Mill)
             {
                 Largest.OutlineShapes.Remove(Outline);
                 Largest.Shapes.Remove(Outline);
             }
 
-            var b = AddBoardToSet(Largest.Name, zerowidth, precombine, 1.0);
+            var b = AddBoardToSet(log, Largest.Name, zerowidth, precombine, 1.0);
             b.Layer = BoardLayer.Outline;
             b.Side = BoardSide.Both;
             b.DisplayShapes.Clear();
@@ -464,7 +464,7 @@ namespace GerberLibrary.Core
 
             return true;
         }
-        private bool InventOutlineFromMill()
+        private bool InventOutlineFromMill(ProgressLog log)
         {
             double largest = 0;
             ParsedGerber Largest = null;
@@ -489,9 +489,9 @@ namespace GerberLibrary.Core
             bool zerowidth = true;
             bool precombine = true;
 
-            Console.WriteLine("Note: Using {0} to extract outline file", Path.GetFileName(Largest.Name));
+            log.AddString (String.Format("Note: Using {0} to extract outline file", Path.GetFileName(Largest.Name)));
 
-            var b = AddBoardToSet(Largest.Name, zerowidth, precombine, 1.0);
+            var b = AddBoardToSet(log, Largest.Name, zerowidth, precombine, 1.0);
             b.Layer = BoardLayer.Outline;
             b.Side = BoardSide.Both;
             //b.DisplayShapes.Clear();
@@ -510,7 +510,7 @@ namespace GerberLibrary.Core
 
         public void CreateBoxOutline()
         {
-            PolyLine Box = new PolyLine();
+            PolyLine Box = new PolyLine( PolyLine.PolyIDs.Outline);
             Box.MakeRectangle(BoundingBox.Width(), BoundingBox.Height());
             Box.Translate(BoundingBox.TopLeft.X + BoundingBox.Width() / 2.0, BoundingBox.TopLeft.Y + BoundingBox.Height() / 2.0);
             Box.Hole = false;
@@ -604,7 +604,7 @@ namespace GerberLibrary.Core
                 Offsetted = Clipper.OffsetPolygons(clips, offset * 100000.0f, JoinType.jtRound);
                 foreach (var poly in Offsetted)
                 {
-                    PolyLine P = new PolyLine();
+                    PolyLine P = new PolyLine(PolyLine.PolyIDs.Temp);
 
                     P.fromPolygon(poly);
 
@@ -689,7 +689,7 @@ namespace GerberLibrary.Core
             float scalefac = 10;
             Console.WriteLine("Report: {0} holes created in case ({1} spacers and {1} screws needed!)", Holes.Count, Holes.Count * 2);
             {
-                var BB = new GerberLibrary.PolyLineSet.Bounds();
+                var BB = new GerberLibrary.Bounds();
                 BB.AddPolygons(Offsetted);
                 BB.AddPolyLine(Biggest);
 
@@ -716,7 +716,7 @@ namespace GerberLibrary.Core
 
                 foreach (var poly in Offsetted)
                 {
-                    PolyLine Pl = new PolyLine();
+                    PolyLine Pl = new PolyLine(PolyLine.PolyIDs.Temp);
 
                     Pl.fromPolygon(poly);
                     var Points = new List<PointF>(Pl.Vertices.Count);

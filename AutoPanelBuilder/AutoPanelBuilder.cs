@@ -1,4 +1,5 @@
-﻿using GerberLibrary.Core.Primitives;
+﻿using GerberLibrary;
+using GerberLibrary.Core.Primitives;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -6,6 +7,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Serialization;
+
+
+
 using TriangleNet;
 using TriangleNet.Geometry;
 
@@ -100,7 +104,7 @@ namespace AutoPanelBuilder
             {
                 foreach (var a in File.ReadAllLines(InputFile))
                 {
-                   var A = GP.AddGerberFolder(a);
+                   var A = GP.AddGerberFolder(new StandardConsoleLog(), a);
                     GP.AddInstance(a, new GerberLibrary.Core.Primitives.PointD(0, 0));
                 }
             }
@@ -119,7 +123,7 @@ namespace AutoPanelBuilder
                 GerberLibrary.GerberArtWriter GAW2 = new GerberLibrary.GerberArtWriter();
                 GerberLibrary.GerberArtWriter GAW = new GerberLibrary.GerberArtWriter();
 
-                GP.BuildAutoTabs(GAW, GAW2);
+                GP.BuildAutoTabs(new StandardConsoleLog(), GAW, GAW2);
                 
 
                 string basepath = args[args.Count() - 1];

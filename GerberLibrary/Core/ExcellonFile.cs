@@ -24,27 +24,29 @@ namespace GerberLibrary
 
     public class ExcellonFile
     {
-        public void Load(string filename, double drillscaler = 1.0)
+        public void Load(ProgressLog log, string filename, double drillscaler = 1.0)
         {
             var lines = File.ReadAllLines(filename);
-            ParseExcellon(lines.ToList(), drillscaler);
+            ParseExcellon(lines.ToList(), drillscaler,log);
         }
 
-        public void Load(StreamReader stream, double drillscaler = 1.0)
+        public void Load(ProgressLog log, StreamReader stream, double drillscaler = 1.0)
         {
             List<string> lines = new List<string>();
             while (!stream.EndOfStream)
             {
                 lines.Add(stream.ReadLine());
             }
-            ParseExcellon(lines, drillscaler);
+            ParseExcellon(lines, drillscaler, log);
         }
 
         public static void MergeAll(List<string> Files, string output, ProgressLog Log)
         {
+            Log.PushActivity("Excellon MergeAll");
             if (Files.Count >= 2)
             {
                 MultiMerge(Files[0], Files.Skip(1).ToList(), output, Log);
+                Log.PopActivity();
                 return;
 
             }
@@ -52,14 +54,15 @@ namespace GerberLibrary
             {
                 if (Files.Count == 1)
                 {
-                    Console.WriteLine("Merging 1 file is copying... doing so...");
+                    Log.AddString("Merging 1 file is copying... doing so...");
                     if (File.Exists(output)) File.Delete(output);
                     File.Copy(Files[0], output);
                 }
                 else
                 {
-                    Console.WriteLine("Need files to do anything??");
+                    Log.AddString("Need files to do anything??");
                 }
+                Log.PopActivity();
                 return;
             }
 
@@ -80,34 +83,38 @@ namespace GerberLibrary
             {
                 File.Delete(s);
             }
+            Log.PopActivity();
         }
 
         private static void MultiMerge(string file1, List<string> otherfiles, string output, ProgressLog Log)
         {
+            Log.PushActivity("Excellon MultiMerge");
             if (File.Exists(file1) == false)
             {
-                Console.WriteLine("{0} not found! stopping process!", file1);
+                Log.AddString(String.Format("{0} not found! stopping process!", file1));
+                Log.PopActivity();
                 return;
             }
             foreach (var otherfile in otherfiles)
             {
                 if (File.Exists(otherfile) == false)
                 {
-                    Console.WriteLine("{0} not found! stopping process!", otherfile);
+                    Log.AddString(String.Format("{0} not found! stopping process!", otherfile));
+                    Log.PopActivity();
                     return;
                 }
             }
 
-            Console.WriteLine("*** Reading {0}:", file1);
+            Log.AddString(String.Format("Reading {0}:", file1));
             ExcellonFile File1Parsed = new ExcellonFile();
-            File1Parsed.Load(file1);
+            File1Parsed.Load(Log, file1);
             List<ExcellonFile> OtherFilesParsed = new List<ExcellonFile>();
             foreach (var otherfile in otherfiles)
             {
 
-                Console.WriteLine("*** Reading {0}:", otherfile);
+                Log.AddString(String.Format("Reading {0}:", otherfile));
                 ExcellonFile OtherFileParsed = new ExcellonFile();
-                OtherFileParsed.Load(otherfile);
+                OtherFileParsed.Load(Log, otherfile);
                 OtherFilesParsed.Add(OtherFileParsed);
             }
             int MaxID = 0;
@@ -125,6 +132,8 @@ namespace GerberLibrary
                 }
             }
             File1Parsed.Write(output, 0, 0, 0, 0);
+
+            Log.PopActivity();
         }
 
         private void AddToolWithHoles(ExcellonTool d)
@@ -158,24 +167,29 @@ namespace GerberLibrary
 
         public static void Merge(string file1, string file2, string outputfile, ProgressLog Log)
         {
+            Log.PushActivity("Excellon Merge");
             if (File.Exists(file1) == false)
             {
-                Console.WriteLine("{0} not found! stopping process!", file1);
+                Log.AddString(String.Format("{0} not found! stopping process!", file1));
+                Log.PopActivity();
                 return;
             }
+
             if (File.Exists(file2) == false)
             {
-                Console.WriteLine("{0} not found! stopping process!", file2);
+                Log.AddString(String.Format("{0} not found! stopping process!", file2));
+                Log.PopActivity();
                 return;
             }
-            Log.AddString(String.Format("*** Merging {0} with {1}", file1, file2));
 
-            Console.WriteLine("*** Reading {0}:", file1);
+            Log.AddString(String.Format("Reading {0}:", file1));
             ExcellonFile File1Parsed = new ExcellonFile();
-            File1Parsed.Load(file1);
-            Console.WriteLine("*** Reading {0}:", file2);
+            File1Parsed.Load(Log, file1);
+            Log.AddString(String.Format("Reading {0}:", file2));
             ExcellonFile File2Parsed = new ExcellonFile();
-            File2Parsed.Load(file2);
+            File2Parsed.Load(Log, file2);
+
+            Log.AddString(String.Format("Merging {0} with {1}", file1, file2));
 
             int MaxID = 0;
             foreach (var D in File1Parsed.Tools)
@@ -190,6 +204,9 @@ namespace GerberLibrary
             }
 
             File1Parsed.Write(outputfile, 0, 0, 0, 0);
+
+            Log.PopActivity();
+
         }
 
         public void Write(string filename, double DX, double DY, double DXp, double DYp, double AngleInDeg = 0)
@@ -282,8 +299,9 @@ namespace GerberLibrary
             return T;
         }
 
-        bool ParseExcellon(List<string> lines, double drillscaler )
+        bool ParseExcellon(List<string> lines, double drillscaler,ProgressLog log )
         {
+            log.PushActivity("Parse Excellon");
             Tools.Clear();
             bool headerdone = false;
             int currentline = 0;
@@ -303,21 +321,21 @@ namespace GerberLibrary
                 {
                     //  case "M70":  GNF.Multiplier = 25.4; break; // inch mode
                     case "INCH":
-                        if (Gerber.ExtremelyVerbose) Console.WriteLine("Out of header INCH found!");
+                        if (Gerber.ExtremelyVerbose) log.AddString("Out of header INCH found!");
                         GNF.SetImperialMode();
 
                         break; // inch mode
                     case "METRIC":
-                        if (Gerber.ExtremelyVerbose) Console.WriteLine("Out of header METRIC found!");
+                        if (Gerber.ExtremelyVerbose) log.AddString("Out of header METRIC found!");
 
                         GNF.SetMetricMode();
                         break;
                     case "M72":
-                        if (Gerber.ExtremelyVerbose) Console.WriteLine("Out of header M72 found!");
+                        if (Gerber.ExtremelyVerbose) log.AddString("Out of header M72 found!");
                         GNF.SetImperialMode();
                         break; // inch mode
                     case "M71":
-                        if (Gerber.ExtremelyVerbose) Console.WriteLine("Out of header M71 found!");
+                        if (Gerber.ExtremelyVerbose) log.AddString("Out of header M71 found!");
                         GNF.SetMetricMode();
                         break; // metric mode
 
@@ -370,7 +388,7 @@ namespace GerberLibrary
                                             for (int i = 1; i < S.Count(); i++)
                                             {if (S[i][0] == '0')
                                             {
-                                                Console.WriteLine("Number spec reading!: {0}", S[i]);
+                                                    log.AddString(String.Format("Number spec reading!: {0}", S[i]));
                                                 var A = S[i].Split('.');
                                                 if (A.Length == 2)
                                                 {
@@ -394,7 +412,7 @@ namespace GerberLibrary
                                     {
                                         if (lines[currentline][0] == ';')
                                         {
-                                            if (Gerber.ShowProgress) Console.WriteLine(lines[currentline]);
+                                            if (Gerber.ShowProgress) log.AddString(lines[currentline]);
 
                                             if (lines[currentline].Contains(";FILE_FORMAT="))
                                             {
@@ -467,6 +485,8 @@ namespace GerberLibrary
                                         CurrentTool = null;
                                     }
                                     break;
+                                case 'M':
+
                                 default:
                                     {                                    
                                         GerberSplitter GS = new GerberSplitter();
@@ -483,6 +503,36 @@ namespace GerberLibrary
                                             if (GLS.HasBefore("G", "Y")) {y1 = GNF.ScaleFileToMM(GLS.GetBefore("G", "Y") * Scaler); LastY = y1; }
                                             
                                             
+                                            double x2 = LastX;
+                                            double y2 = LastY;
+
+                                            if (GLS.HasAfter("G", "X")) { x2 = GNF.ScaleFileToMM(GLS.GetAfter("G", "X") * Scaler); LastX = x2; }
+                                            if (GLS.HasAfter("G", "Y")) { y2 = GNF.ScaleFileToMM(GLS.GetAfter("G", "Y") * Scaler); LastY = y2; }
+
+                                            CurrentTool.Slots.Add(new ExcellonTool.SlotInfo() { Start = new PointD(x1 * drillscaler, y1 * drillscaler), End = new PointD(x2 * drillscaler, y2 * drillscaler) });
+
+                                            LastX = x2;
+                                            LastY = y2;
+                                        }
+                                        else if (GS.Has("G") && GS.Get("G") == 00 && (GS.Has("X") || GS.Has("Y")))
+                                        {
+                                            GerberListSplitter GLS = new GerberListSplitter();
+                                            GLS.Split(GCC.originalline, GNF, true);
+
+                                            double x1 = LastX;
+                                            double y1 = LastY;
+
+                                            if (GLS.HasAfter("G", "X")) { x1 = GNF.ScaleFileToMM(GLS.GetAfter("G", "X") * Scaler); LastX = x1; }
+                                            if (GLS.HasAfter("G", "Y")) { y1 = GNF.ScaleFileToMM(GLS.GetAfter("G", "Y") * Scaler); LastY = y1; }
+
+                                        }
+                                        else if (GS.Has("G") && GS.Get("G") == 01 && (GS.Has("X") || GS.Has("Y")))
+                                        {
+                                            GerberListSplitter GLS = new GerberListSplitter();
+                                            GLS.Split(GCC.originalline, GNF, true);
+
+                                            double x1 = LastX;
+                                            double y1 = LastY;
                                             double x2 = LastX;
                                             double y2 = LastY;
 
@@ -515,7 +565,52 @@ namespace GerberLibrary
                 }
                 currentline++;
             }
+            log.PopActivity();
             return headerdone;
+        }
+
+
+        public static void WriteContainedOnly(string inputfile, PolyLine Boundary, string outputfilename, ProgressLog Log)
+        {
+            Log.PushActivity("Excellon Clipper");
+            if (File.Exists(inputfile) == false)
+            {
+                Log.AddString(String.Format("{0} not found! stopping process!", Path.GetFileName(inputfile)));
+                Log.PopActivity();
+                return;
+            }
+            Log.AddString(String.Format("Clipping {0} to {1}", Path.GetFileName(inputfile), Path.GetFileName(outputfilename)));
+
+            ExcellonFile EF = new ExcellonFile();
+            EF.Load(Log, inputfile);
+            EF.WriteContained(Boundary, outputfilename, Log);
+            Log.PopActivity();
+        }
+
+        private void WriteContained(PolyLine boundary, string outputfilename, ProgressLog log)
+        {
+            ExcellonFile Out = new ExcellonFile();
+
+            foreach(var T in Tools)
+            {
+                Out.Tools[T.Key] = new ExcellonTool() { ID = T.Value.ID, Radius = T.Value.Radius };
+                foreach(var d in T.Value.Drills)
+                {
+                    if (boundary.PointInPoly(new PointD(d.X , d.Y)))
+                      {
+                        Out.Tools[T.Key].Drills.Add(d);
+                    }
+                }
+                foreach (var d in T.Value.Slots)
+                {
+                    if (boundary.PointInPoly(d.Start) || boundary.PointInPoly(d.End))
+                    {
+                        Out.Tools[T.Key].Slots.Add(d);
+                    }
+                }
+            }
+
+            Out.Write(outputfilename, 0, 0, 0, 0);
         }
     }
 }

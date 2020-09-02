@@ -11,6 +11,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using GerberLibrary.Core;
+using Ionic.Zip;
 
 namespace GerberLibrary
 {
@@ -25,7 +26,13 @@ namespace GerberLibrary
 
         public Color BackgroundColor = Color.FromArgb(10,10,40);
         public Color BoardRenderTraceColor = Gerber.ParseColor("green");
-
+        public void SetupColors(string SolderMaskColor, string SilkScreenColor, string TracesColor = "auto", string CopperColor = "gold")
+        {
+            BoardRenderColor = GerberLibrary.Gerber.ParseColor(SolderMaskColor);
+            BoardRenderSilkColor = GerberLibrary.Gerber.ParseColor(SilkScreenColor);
+            BoardRenderPadColor = GerberLibrary.Gerber.ParseColor(CopperColor);
+            BoardRenderTraceColor = GerberLibrary.Gerber.ParseColor(TracesColor);
+        }
         public Color GetDefaultColor(BoardLayer layer, BoardSide side)
         {
             switch(layer)
@@ -42,7 +49,7 @@ namespace GerberLibrary
     public static class Gerber
     {
         #region GERBERPROCESSINGDEFAULTS
-        public static double ArcQualityScaleFactor = 15;
+        public static double ArcQualityScaleFactor = 20;
         
         public static bool DirectlyShowGeneratedBoardImages = true;
         public static bool DumpSanitizedOutput = false;
@@ -63,7 +70,73 @@ namespace GerberLibrary
         public static bool WriteSanitized = false;
         #endregion
 
+        public static void ZipGerberFolderToFactoryFolder(string Name, string BoardGerbersFolder, string BoardFactoryFolder)
+        {
+            if (Directory.Exists(BoardGerbersFolder))
+            {
+                string TargetZip = Path.Combine(BoardFactoryFolder, Name + "_gerbers.zip");
+                if (File.Exists(TargetZip)) File.Delete(TargetZip);
+                Console.WriteLine("Zipping gerbers to {0}", TargetZip);
+                ZipFile Z = new ZipFile();
+                List<string> OutlineMerge = new List<string>();
+                foreach (var F in Directory.GetFiles(BoardGerbersFolder))
+                {
+                    bool AddToZip = false;
+                    var T = GerberLibrary.Gerber.FindFileType(F);
+                    if (T == BoardFileType.Drill)
+                    {
+                        AddToZip = true;
+                    }
+                    else
+                    {
+                        GerberLibrary.Gerber.DetermineBoardSideAndLayer(F, out BoardSide Side, out BoardLayer Layer);
+                        switch (Layer)
+                        {
+                            case BoardLayer.Mill:
+                            case BoardLayer.Outline:
+                                OutlineMerge.Add(F);
+                                break;
+                            case BoardLayer.Carbon:
+                            case BoardLayer.Paste:
+                            case BoardLayer.Silk:
+                            case BoardLayer.SolderMask:
+                            case BoardLayer.Copper:
+                            case BoardLayer.Drill:
+                                AddToZip = true;
+                                break;
+                            case BoardLayer.Assembly:
+                                string TargetGerb = Path.Combine(BoardFactoryFolder, Name +"_"+ Path.GetFileName(F));
+                                File.Copy(F, TargetGerb, true);
+                                break;
+                        }
+                    }
+                    if (AddToZip)
+                    {
+                        Console.WriteLine("Adding {0} to zip.", F);
+                        Z.AddFile(F,".");
+                    }
+                }
+                if (OutlineMerge.Count > 0)
+                {
+                    if (OutlineMerge.Count == 1)
+                    {
+//                        string TargetGerb = Path.Combine(BoardFactoryFolder, Name + "_" + Path.GetFileName(OutlineMerge[0]));
+  //                      File.Copy(OutlineMerge[0], TargetGerb, true);
+                        Z.AddFile(OutlineMerge[0],".");
+                    }
+                    else
+                    {
+                        string TargetGerb = Path.Combine(BoardFactoryFolder, Name + "_" + "MergedOutlines.gko");
+                        GerberMerger.MergeAll(OutlineMerge, TargetGerb, new StandardConsoleLog());
+                        Z.AddFile(TargetGerb,".");
+                    }
+                }
+                Z.Save(TargetZip);
 
+
+            }
+        }
+       
         public static int GetDefaultSortOrder(BoardSide side, BoardLayer layer)
         {
             int R = 0;
@@ -83,6 +156,8 @@ namespace GerberLibrary
 
         private static readonly Regex rxScientific = new Regex(@"^(?<sign>-?)(?<head>\d+)(\.(?<tail>\d*?)0*)?E(?<exponent>[+\-]\d+)$", RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture | RegexOptions.CultureInvariant);
         public static bool SkipEagleDrillFix = false;
+
+        public static bool ThrowExceptions = false; // set to true to make the debugger die in useful places.
 
         public static List<PointD> CreateCurvePoints(double LastX, double LastY, double X, double Y, double I, double J, InterpolationMode mode, GerberQuadrantMode qmode)
         {
@@ -240,14 +315,61 @@ namespace GerberLibrary
             string ext = filesplit[filesplit.Count() - 1].ToLower();
             switch (ext)
             {
+                case "art": // ORCAD RELATED TYPES
+                    {
+
+                        switch (Path.GetFileNameWithoutExtension(gerberfile).ToUpper())
+                        {
+                            case "PMT": Side = BoardSide.Top; Layer = BoardLayer.Paste; break;
+                            case "PMB": Side = BoardSide.Bottom; Layer = BoardLayer.Paste; break;
+                            case "TOP": Side = BoardSide.Top; Layer = BoardLayer.Copper;break;
+                            case "BOTTOM": Side = BoardSide.Bottom; Layer = BoardLayer.Copper; break;
+                            case "SMBOT": Side = BoardSide.Bottom; Layer = BoardLayer.SolderMask; break;
+                            case "SMTOP": Side = BoardSide.Top; Layer = BoardLayer.SolderMask; break;
+                            case "SSBOT": Side = BoardSide.Bottom; Layer = BoardLayer.Silk; break;
+                            case "SSTOP": Side = BoardSide.Top; Layer = BoardLayer.Silk; break;
+
+                            case "DRILLING": Side = BoardSide.Both; Layer = BoardLayer.Drill;break;
+//                            case "KEEPOUT": Side = BoardSide.Both; Layer = BoardLayer.Outline; break;
+                        }
+                        break;
+                    }
+                case "slices": Side = BoardSide.Both; Layer = BoardLayer.Utility;break;
+                case "copper_bottom": Side = BoardSide.Bottom;Layer = BoardLayer.Copper;break;
+                case "copper_top": Side = BoardSide.Top; Layer = BoardLayer.Copper; break;
+                case "silk_bottom": Side = BoardSide.Bottom; Layer = BoardLayer.Silk; break;
+                case "silk_top": Side = BoardSide.Top; Layer = BoardLayer.Silk; break;
+                case "paste_bottom": Side = BoardSide.Bottom; Layer = BoardLayer.Paste; break;
+                case "paste_top": Side = BoardSide.Top; Layer = BoardLayer.Paste; break;
+                case "soldermask_bottom": Side = BoardSide.Bottom; Layer = BoardLayer.SolderMask; break;
+                case "soldermask_top": Side = BoardSide.Top; Layer = BoardLayer.SolderMask; break;
+                case "drill_both": Side = BoardSide.Both; Layer = BoardLayer.Drill; break;
+                case "outline_both": Side = BoardSide.Both; Layer = BoardLayer.Outline; break;
+                case "png":
+                {
+                        Side = BoardSide.Both;
+                        Layer = BoardLayer.Silk;
+                    }
+                    break;
+               
+                case "assemblytop":
+                    Layer = BoardLayer.Assembly;
+                    Side = BoardSide.Top;
+                    break;
+                case "assemblybottom":
+                    Layer = BoardLayer.Assembly;
+                    Side = BoardSide.Bottom;
+                    break;
                 case "gbr":
 
                     switch (Path.GetFileNameWithoutExtension(gerberfile).ToLower())
                     {
+                        case "profile":
                         case "boardoutline":
                             Side = BoardSide.Both;
                             Layer = BoardLayer.Outline;
                             break;
+
                         case "outline":
                             Side = BoardSide.Both;
                             Layer = BoardLayer.Outline;
@@ -257,61 +379,88 @@ namespace GerberLibrary
                             Side = BoardSide.Both;
                             Layer = BoardLayer.Outline;
                             break;
+                        
+                        case "copper_bottom":
                         case "bottom":
                             Side = BoardSide.Bottom;
                             Layer = BoardLayer.Copper;
                             break;
+
+                        case "soldermask_bottom":
                         case "bottommask":
                             Side = BoardSide.Bottom;
                             Layer = BoardLayer.SolderMask;
                             break;
+
+                        case "solderpaste_bottom":
                         case "bottompaste":
                             Side = BoardSide.Bottom;
                             Layer = BoardLayer.Paste;
                             break;
+
+                        case "silkscreen_bottom":
                         case "bottomsilk":
                             Side = BoardSide.Bottom;
                             Layer = BoardLayer.Silk;
                             break;
+
+                        case "copper_top":
                         case "top":
                             Side = BoardSide.Top;
                             Layer = BoardLayer.Copper;
                             break;
+                        
+                        case "soldermask_top":
                         case "topmask":
                             Side = BoardSide.Top;
                             Layer = BoardLayer.SolderMask;
                             break;
+
+                        case "solderpaste_top":
                         case "toppaste":
                             Side = BoardSide.Top;
                             Layer = BoardLayer.Paste;
                             break;
+                        
+                        case "silkscreen_top":
                         case "topsilk":
                             Side = BoardSide.Top;
                             Layer = BoardLayer.Silk;
                             break;
+
                         case "inner1":
                             Side = BoardSide.Internal1;
                             Layer = BoardLayer.Copper;
                             break;
+
                         case "inner2":
                             Side = BoardSide.Internal2;
                             Layer = BoardLayer.Copper;
                             break;
 
                         default:
-                            if (gerberfile.ToLower().Contains("outline")) { Side = BoardSide.Both; Layer = BoardLayer.Outline; }
-                            if (gerberfile.ToLower().Contains("-edge_cuts")) { Side = BoardSide.Both;Layer = BoardLayer.Outline;}
-
-                            if (gerberfile.ToLower().Contains("-b_cu")) { Side = BoardSide.Bottom; Layer = BoardLayer.Copper; }
-                            if (gerberfile.ToLower().Contains("-f_cu")) { Side = BoardSide.Top; Layer = BoardLayer.Copper; }
-                            if (gerberfile.ToLower().Contains("-b_silks")) { Side = BoardSide.Bottom; Layer = BoardLayer.Silk; }
-                            if (gerberfile.ToLower().Contains("-f_silks")) { Side = BoardSide.Top; Layer = BoardLayer.Silk; }
-                            if (gerberfile.ToLower().Contains("-b_mask")) { Side = BoardSide.Bottom; Layer = BoardLayer.SolderMask; }
-                            if (gerberfile.ToLower().Contains("-f_mask")) { Side = BoardSide.Top; Layer = BoardLayer.SolderMask; }
-                            if (gerberfile.ToLower().Contains("-b_paste")) { Side = BoardSide.Bottom; Layer = BoardLayer.Paste; }
-                            if (gerberfile.ToLower().Contains("-f_paste")) { Side = BoardSide.Top; Layer = BoardLayer.Paste; }
+                            {
+                                string lcase = gerberfile.ToLower();
+                                if (lcase.Contains("board outline")) { Side = BoardSide.Both; Layer = BoardLayer.Outline; };
+                                if (lcase.Contains("copper bottom")) { Side = BoardSide.Bottom; Layer = BoardLayer.Copper; };
+                                if (lcase.Contains("silkscreen bottom")) { Side = BoardSide.Bottom; Layer = BoardLayer.Silk; };
+                                if (lcase.Contains("copper top")) { Side = BoardSide.Top; Layer = BoardLayer.Copper; };
+                                if (lcase.Contains("silkscreen top")) { Side = BoardSide.Top; Layer = BoardLayer.Silk; };
+                                if (lcase.Contains("solder mask bottom")) { Side = BoardSide.Bottom; Layer = BoardLayer.SolderMask; };
+                                if (lcase.Contains("solder mask top")) { Side = BoardSide.Top; Layer = BoardLayer.SolderMask; };
+                                if (lcase.Contains("drill-copper top-copper bottom")) { Side = BoardSide.Both; Layer = BoardLayer.Drill; };
+                                if (lcase.Contains("outline")) { Side = BoardSide.Both; Layer = BoardLayer.Outline; }
+                                if (lcase.Contains("-edge_cuts")) { Side = BoardSide.Both; Layer = BoardLayer.Outline; }
+                                if (lcase.Contains("-b_cu")) { Side = BoardSide.Bottom; Layer = BoardLayer.Copper; }
+                                if (lcase.Contains("-f_cu")) { Side = BoardSide.Top; Layer = BoardLayer.Copper; }
+                                if (lcase.Contains("-b_silks")) { Side = BoardSide.Bottom; Layer = BoardLayer.Silk; }
+                                if (lcase.Contains("-f_silks")) { Side = BoardSide.Top; Layer = BoardLayer.Silk; }
+                                if (lcase.Contains("-b_mask")) { Side = BoardSide.Bottom; Layer = BoardLayer.SolderMask; }
+                                if (lcase.Contains("-f_mask")) { Side = BoardSide.Top; Layer = BoardLayer.SolderMask; }
+                                if (lcase.Contains("-b_paste")) { Side = BoardSide.Bottom; Layer = BoardLayer.Paste; }
+                                if (lcase.Contains("-f_paste")) { Side = BoardSide.Top; Layer = BoardLayer.Paste; }
+                            }
                             break;
-
                     }
                     break;
 
@@ -329,7 +478,6 @@ namespace GerberLibrary
                         bs.Add(new boardset() { name = ".bottomsilkscreen", side = BoardSide.Bottom, layer = BoardLayer.Silk });
                         bs.Add(new boardset() { name = ".bottomlayer", side = BoardSide.Bottom, layer = BoardLayer.Copper });
                         bs.Add(new boardset() { name = ".bcream", side = BoardSide.Bottom, layer = BoardLayer.Paste });
-
                         bs.Add(new boardset() { name = ".internalplane1", side = BoardSide.Internal1, layer = BoardLayer.Copper });
                         bs.Add(new boardset() { name = ".internalplane2", side = BoardSide.Internal2, layer = BoardLayer.Copper });
 
@@ -348,31 +496,37 @@ namespace GerberLibrary
                     Side = BoardSide.Both;
                     Layer = BoardLayer.Mill;
                     break;
+
                 case "fabrd":
                 case "oln":
                 case "gko":
+                case "gm1":
                     Side = BoardSide.Both;
                     Layer = BoardLayer.Outline;
                     break;
+
                 case "l2":
                 case "gl1":
                     Side = BoardSide.Internal1;
                     Layer = BoardLayer.Copper;
                     break;
+
                 case "adtop":
                     Side = BoardSide.Top;
                     Layer = BoardLayer.Assembly;
                     break;
+
                 case "adbottom":
                     Side = BoardSide.Bottom;
                     Layer = BoardLayer.Assembly;
                     break;
+
                 case "notes":
                     Side = BoardSide.Both;
                     Layer = BoardLayer.Notes;
                     break;
-                case "l3":
 
+                case "l3":
                 case "gl2":
                     Side = BoardSide.Internal2;
                     Layer = BoardLayer.Copper;
@@ -485,7 +639,8 @@ namespace GerberLibrary
                     Side = BoardSide.Bottom;
                     Layer = BoardLayer.Paste;
                     break;
-                case "drill_TOP_BOTTOM":
+
+                case "drill_top_bottom":
                 case "drl":
                 case "drill":
                 case "drillnpt":
@@ -499,7 +654,7 @@ namespace GerberLibrary
         public static BoardFileType FindFileType(string filename)
         {
             //filename = filename.ToLower();
-            List<string> unsupported = new List<string>() { "config", "exe", "dll", "png", "zip", "gif", "jpeg", "doc", "docx", "jpg", "bmp" };
+            List<string> unsupported = new List<string>() { "config", "exe", "dll", "png", "zip", "gif", "jpeg", "doc", "docx", "jpg", "bmp", "svg" };
             string[] filesplit = filename.Split('.');
             string ext = filesplit[filesplit.Count() - 1].ToLower();
             foreach (var s in unsupported)
@@ -580,13 +735,13 @@ namespace GerberLibrary
 
         }
 
-        public static PolyLineSet.Bounds GetBoundingBox(List<string> generatedFiles)
+        public static Bounds GetBoundingBox(ProgressLog log, List<string> generatedFiles)
         {
-            PolyLineSet.Bounds A = new PolyLineSet.Bounds();
+            Bounds A = new Bounds();
 
             foreach (var a in generatedFiles)
             {
-                ParsedGerber PLS = PolyLineSet.LoadGerberFile(a, State: new GerberParserState() { PreCombinePolygons = false });
+                ParsedGerber PLS = PolyLineSet.LoadGerberFile(log, a, State: new GerberParserState() { PreCombinePolygons = false });
                 A.AddBox(PLS.BoundingBox);
             }
             return A;
@@ -604,7 +759,7 @@ namespace GerberLibrary
             {
                 case "blue": return Color.FromArgb(0, 40, 74);
                 case "yellow": return Color.FromArgb(234, 206, 39);
-                case "green": return Color.FromArgb(68, 105, 80);
+                case "green": return Color.FromArgb(0, 0x30,0);
                 case "black": return Color.FromArgb(5, 5, 5);
                 case "white": return Color.FromArgb(250, 250, 250);
                 case "red": return Color.FromArgb(192, 43, 43);
@@ -630,8 +785,9 @@ namespace GerberLibrary
             return inp * 360.0 / (Math.PI * 2.0);
         }
 
-        public static bool SaveDebugImage(string GerberFilename, string BitmapFilename, float dpi, Color Foreground, Color Background)
+        public static bool SaveDebugImage(string GerberFilename, string BitmapFilename, float dpi, Color Foreground, Color Background, ProgressLog log)
         {
+            log.PushActivity("debug image");
             ParsedGerber PLS;
             GerberParserState State = new GerberParserState()
             {
@@ -650,11 +806,11 @@ namespace GerberLibrary
             }
             if (FileType == BoardFileType.Drill)
             {
-                PLS = PolyLineSet.LoadExcellonDrillFile(GerberFilename);
+                PLS = PolyLineSet.LoadExcellonDrillFile(log, GerberFilename);
             }
             else
             {
-                PLS = PolyLineSet.LoadGerberFile(GerberFilename, forcezero, Gerber.WriteSanitized, State);
+                PLS = PolyLineSet.LoadGerberFile(log, GerberFilename, forcezero, Gerber.WriteSanitized, State);
 
             }
             double WidthInMM = PLS.BoundingBox.BottomRight.X - PLS.BoundingBox.TopLeft.X;
@@ -662,7 +818,7 @@ namespace GerberLibrary
             int Width = (int)(Math.Ceiling((WidthInMM) * (dpi / 25.4)));
             int Height = (int)(Math.Ceiling((HeightInMM) * (dpi / 25.4)));
 
-            Console.WriteLine("Progress: Exporting {0} ({2},{3}mm) to {1} ({4},{5})", GerberFilename, BitmapFilename, WidthInMM, HeightInMM, Width, Height);
+            log.AddString(String.Format("Exporting {0} ({2},{3}mm) to {1} ({4},{5})", GerberFilename, BitmapFilename, WidthInMM, HeightInMM, Width, Height));
             GerberImageCreator GIC = new GerberImageCreator();
             GIC.scale = dpi / 25.4f; // dpi
             GIC.BoundingBox.AddBox(PLS.BoundingBox);
@@ -720,52 +876,15 @@ namespace GerberLibrary
 
 
             B2.Save(BitmapFilename);
+            log.PopActivity();
             return true;
         }
 
-        public static bool SaveGerberFileToImage(string GerberFilename, string BitmapFilename, float dpi, Color Foreground, Color Background)
+        public static bool SaveGerberFileToImage(ProgressLog log, string GerberFilename, string BitmapFilename, float dpi, Color Foreground, Color Background)
         {
             try
             {
-                ParsedGerber PLS;
-                GerberParserState State = new GerberParserState()
-                {
-                    PreCombinePolygons = false
-                };
-
-                var FileType = Gerber.FindFileType(GerberFilename);
-                Gerber.DetermineBoardSideAndLayer(GerberFilename, out State.Side, out State.Layer);
-                bool forcezero = false;
-
-                if (State.Layer == BoardLayer.Outline)
-                {
-                    //    PLS.PreCombinePolygons = true;
-                    //    forcezero = true;
-                }
-                if (FileType == BoardFileType.Drill)
-                {
-                    PLS = PolyLineSet.LoadExcellonDrillFile(GerberFilename);
-                }
-                else
-                {
-                    PLS = PolyLineSet.LoadGerberFile(GerberFilename, forcezero, Gerber.WriteSanitized, State);
-
-                }
-                double WidthInMM = PLS.BoundingBox.BottomRight.X - PLS.BoundingBox.TopLeft.X;
-                double HeightInMM = PLS.BoundingBox.BottomRight.Y - PLS.BoundingBox.TopLeft.Y;
-                int Width = (int)(Math.Ceiling((WidthInMM) * (dpi / 25.4)));
-                int Height = (int)(Math.Ceiling((HeightInMM) * (dpi / 25.4)));
-
-                Console.WriteLine("Progress: Exporting {0} ({2},{3}mm) to {1} ({4},{5})", GerberFilename, BitmapFilename, WidthInMM, HeightInMM, Width, Height);
-                GerberImageCreator GIC = new GerberImageCreator();
-                GIC.scale = dpi / 25.4f; // dpi
-                GIC.BoundingBox.AddBox(PLS.BoundingBox);
-
-                var Tr = GIC.BuildMatrix(Width, Height);
-                Bitmap B2 = GIC.RenderToBitmap(Width, Height, Tr, Foreground, Background, PLS, true);
-                if (B2 == null) return false;
-                B2.Save(BitmapFilename);
-                return true;
+                return SaveGerberFileToImageUnsafe(log, GerberFilename, BitmapFilename, dpi, Foreground, Background);
             }
             catch (Exception E)
             {
@@ -778,6 +897,49 @@ namespace GerberLibrary
                 return false;
             }
 
+        }
+
+        public static bool SaveGerberFileToImageUnsafe(ProgressLog log, string GerberFilename, string BitmapFilename, float dpi, Color Foreground, Color Background)
+        {
+            ParsedGerber PLS;
+            GerberParserState State = new GerberParserState()
+            {
+                PreCombinePolygons = false
+            };
+
+            var FileType = Gerber.FindFileType(GerberFilename);
+            Gerber.DetermineBoardSideAndLayer(GerberFilename, out State.Side, out State.Layer);
+            bool forcezero = false;
+
+            if (State.Layer == BoardLayer.Outline)
+            {
+                //    PLS.PreCombinePolygons = true;
+                //    forcezero = true;
+            }
+            if (FileType == BoardFileType.Drill)
+            {
+                PLS = PolyLineSet.LoadExcellonDrillFile(log, GerberFilename); ;
+            }
+            else
+            {
+                PLS = PolyLineSet.LoadGerberFile(log, GerberFilename, forcezero, Gerber.WriteSanitized, State);
+
+            }
+            double WidthInMM = PLS.BoundingBox.BottomRight.X - PLS.BoundingBox.TopLeft.X;
+            double HeightInMM = PLS.BoundingBox.BottomRight.Y - PLS.BoundingBox.TopLeft.Y;
+            int Width = (int)(Math.Ceiling((WidthInMM) * (dpi / 25.4)));
+            int Height = (int)(Math.Ceiling((HeightInMM) * (dpi / 25.4)));
+
+            Console.WriteLine("Progress: Exporting {0} ({2},{3}mm) to {1} ({4},{5})", GerberFilename, BitmapFilename, WidthInMM, HeightInMM, Width, Height);
+            GerberImageCreator GIC = new GerberImageCreator();
+            GIC.scale = dpi / 25.4f; // dpi
+            GIC.BoundingBox.AddBox(PLS.BoundingBox);
+
+            var Tr = GIC.BuildMatrix(Width, Height);
+            Bitmap B2 = GIC.RenderToBitmap(Width, Height, Tr, Foreground, Background, PLS, true);
+            if (B2 == null) return false;
+            B2.Save(BitmapFilename);
+            return true;
         }
 
         public static string ToFloatingPointString(double value)
@@ -826,10 +988,7 @@ namespace GerberLibrary
 
         public static void WriteAllLines(string filename, List<string> lines)
         {
-
             File.WriteAllText(filename, string.Join(Gerber.LineEnding, lines));
-
-
         }
 
         internal static double ParseDouble(string inp)

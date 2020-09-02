@@ -10,6 +10,32 @@ using static GerberLibrary.PolyLineSet;
 
 namespace GerberLibrary.Core
 {
+    public class Line
+    {
+        public float x1;
+        public float y1;
+        public float x2;
+        public float y2;
+
+        public void Draw(Graphics g, Color C, float W = 1.0f)
+        {
+            g.DrawLine(new Pen(C, W), x1, y1, x2, y2);
+        }
+
+        public static float SumLengths(List<Line> outline)
+        {
+            return outline.Sum(x => x.Length());
+        }
+
+        private float Length()
+        {
+            float dx = x2 - x1;
+            float dy = y2 - y1;
+            return (float)Math.Sqrt(dx * dx + dy * dy);
+        }
+    }
+
+
     public static class Helpers
     {
         public static PathDefWithClosed Sanitize(PathDefWithClosed inp)
@@ -31,15 +57,171 @@ namespace GerberLibrary.Core
             return R;
         }
 
-
-
-        public static List<PathDefWithClosed> LineSegmentsToPolygons(List<PathDefWithClosed> input, bool joinclosest = true)
+        public static List<(double res1, double res2, double scalar)> GetFitForRatio(double scalar, List<double> ValueSet)
         {
+            Dictionary<(double res1, double res2), double> ResistorResults = new Dictionary<(double res1, double res2), double>();
+
+            for (int i2 = 0; i2 < ResistorRanges.Count; i2++)
+            {
+                for (int j2 = i2 + 1; j2 < ResistorRanges.Count; j2++)
+                {
+                    for (int i = 0; i < ValueSet.Count; i++)
+                    {
+                        for (int j = 0; j < ValueSet.Count; j++)
+                        {
+                            double R1 = ResistorRanges[i2] * ValueSet[i];
+                            double R2 = ResistorRanges[j2] * ValueSet[j];
+                            ResistorResults.Add((res1: R1, res2: R2), Math.Abs(R1 / R2 - scalar));
+                        }
+                    }
+
+                }
+            }
+            var items = (from i in ResistorResults orderby i.Value select i.Key).ToList().Take(10);
+
+            List<(double res1, double res2, double scalar)> Res = new List<(double res1, double res2, double scalar)>();
+            foreach (var i in items)
+            {
+                Res.Add((res1: i.res1, res2: i.res2, i.res2 / i.res1));
+            }
+            return Res;
+        }
+
+
+
+        public static List<(double res1, double res2, double scalar)> GetFitForRatioAndSecond(double scalar, List<double> ValueSet, double second)
+        {
+            Dictionary<(double res1, double res2), double> ResistorResults = new Dictionary<(double res1, double res2), double>();
+
+            for (int i2 = 0; i2 < ResistorRanges.Count; i2++)
+            {
+                for (int i = 0; i < ValueSet.Count; i++)
+                {
+                    double R1 = ResistorRanges[i2] * ValueSet[i];
+                    double R2 = second;
+                    ResistorResults.Add((res1: R1, res2: R2), Math.Abs(R1 / R2 - scalar));
+
+                }
+            }
+            var items = (from i in ResistorResults orderby i.Value select i.Key).ToList().Take(10);
+
+            List<(double res1, double res2, double scalar)> Res = new List<(double res1, double res2, double scalar)>();
+            foreach (var i in items)
+            {
+                Res.Add((res1: i.res1, res2: i.res2, i.res2 / i.res1));
+            }
+            return Res;
+        }
+
+
+        public static List<(double res1, double res2, double scalar)> GetE96FitForRatio(double scalar)
+        {
+            return GetFitForRatio(scalar, E96);
+        }
+
+        public static List<(double res1, double res2, double scalar)> GetE24FitForRatio(double scalar)
+        {
+            return GetFitForRatio(scalar, E24);
+        }
+
+
+        public static List<(double res1, double res2, double scalar)> GetE96FitForRatioAndSecond(double scalar, double second)
+        {
+            return GetFitForRatioAndSecond(scalar, E96, second);
+        }
+
+        public static List<(double res1, double res2, double scalar)> GetE24FitForRatioAndSecond(double scalar, double second)
+        {
+            return GetFitForRatioAndSecond(scalar, E24, second);
+        }
+
+
+        public static List<double> E12 = new List<double>() { 1.0, 1.2, 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2 };
+        public static List<double> E24 = new List<double>() { 1.0, 1.1, 1.2, 1.3, 1.5, 1.6, 1.8, 2.0, 2.2, 2.4, 2.7, 3.0, 3.3, 3.6, 3.9, 4.3, 4.7, 5.1, 5.6, 6.2, 6.8, 7.5, 8.2, 9.1 };
+        public static List<double> E48 = new List<double>() { 1.00, 1.05, 1.10, 1.15, 1.21, 1.27, 1.33, 1.40, 1.47, 1.54, 1.62, 1.69, 1.78, 1.87, 1.96, 2.05, 2.15, 2.26, 2.37, 2.49, 2.61, 2.74, 2.87, 3.01, 3.16, 3.32, 3.48, 3.65, 3.83, 4.02, 4.22, 4.42, 4.64, 4.87, 5.11, 5.36, 5.62, 5.90, 6.19, 6.49, 6.81, 7.15, 7.50, 7.87, 8.25, 8.66, 9.09, 9.53 };
+        public static List<double> E96 = new List<double>() { 1.00, 1.02, 1.05, 1.07, 1.10, 1.13, 1.15, 1.18, 1.21, 1.24, 1.27, 1.30, 1.33, 1.37, 1.40, 1.43, 1.47, 1.50, 1.54, 1.58, 1.62, 1.65, 1.69, 1.74, 1.78, 1.82, 1.87, 1.91, 1.96, 2.00, 2.05, 2.10, 2.15, 2.21, 2.26, 2.32, 2.37, 2.43, 2.49, 2.55, 2.61, 2.67, 2.74, 2.80, 2.87, 2.94, 3.01, 3.09, 3.16, 3.24, 3.32, 3.40, 3.48, 3.57, 3.65, 3.74, 3.83, 3.92, 4.02, 4.12, 4.22, 4.32, 4.42, 4.53, 4.64, 4.75, 4.87, 4.99, 5.11, 5.23, 5.36, 5.49, 5.62, 5.76, 5.90, 6.04, 6.19, 6.34, 6.49, 6.65, 6.81, 6.98, 7.15, 7.32, 7.50, 7.68, 7.87, 8.06, 8.25, 8.45, 8.66, 8.87, 9.09, 9.31, 9.53, 9.76 };
+        public static List<double> ResistorRanges = new List<double>() { 1, 10, 100, 1000, 10000, 100000, 1000000 };
+        public static List<double> CapacitorRanges = new List<double>() { 0.000000000001, 0.00000000001, 0.0000000001, 0.000000001, 0.00000001, 0.0000001, 0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1 };
+
+
+
+        public static string MakeNiceUnitString(double V, Units U)
+        {
+            string UnitName = Enum.GetName(typeof(Units), U);
+            if (U == GerberLibrary.Core.Units.None) UnitName = "";
+            if (V == 0) return "0" + UnitName;
+            int M = 0;
+            int M2 = 0;
+            double V2 = Math.Abs(V);
+            double V3 = V2;
+            while (V2 >= 10)
+            {
+                V2 /= 10;
+                M++;
+                if (M % 3 == 0) { M2++; V3 /= 1000.0f; };
+            }
+
+            if (V2 < 1)
+            {
+                while (V3 < 1)
+                {
+                    V2 *= 10;
+                    M--;
+                    if (M % 3 == 0) { M2--; V3 *= 1000.0f; };
+                }
+            }
+            M = M2;
+            List<string> Units = new List<string>() { "p", "n", "u", "m", "", "k", "M", "G", "T" };
+            M += 4;
+            if (M >= 0 && M < Units.Count)
+            {
+                UnitName = Units[M] + UnitName;
+            }
+            return V3.ToString().Replace(',', '.') + " " + UnitName;
+
+        }
+        public static void Transform(double dx, double dy, double cx, double cy, double angle, ref double X, ref double Y)
+        {
+
+            GerberNumberFormat GNF = new GerberNumberFormat();
+
+            double na = angle * (Math.PI * 2.0) / 360.0; ;
+            double SA = Math.Sin(na);
+            double CA = Math.Cos(na);
+            GNF.Multiplier = 1;
+            GerberTransposer.GetTransformedCoord(dx, dy, cx, cy, angle, CA, SA, GNF, true, ref X, ref Y);
+            double adx = dx;
+            double ady = dy;
+        }
+
+
+        public static Line TransFormLine(Line v, double dx, double dy, float cx, float cy, double angle)
+        {
+            double x1 = v.x1;
+            double x2 = v.x2;
+            double y1 = v.y1;
+            double y2 = v.y2;
+            Transform(dx, dy, cx, cy, angle, ref x1, ref y1);
+            Transform(dx, dy, cx, cy, angle, ref x2, ref y2);
+
+            return new Line() { x1 = (float)x1, y1 = (float)y1, x2 = (float)x2, y2 = (float)y2 };
+
+        }
+
+        public static List<PathDefWithClosed> LineSegmentsToPolygons(ProgressLog log,  List<PathDefWithClosed> input, bool joinclosest = true)
+        {
+            List<PathDefWithClosed> LeftoverLines = new List<PathDefWithClosed>();
+            if (input.Count == 0)
+            {
+                return LeftoverLines;
+            }
+
+
+            log.PushActivity("LineSegmentsToPolygons");
             // return input;
             List<PathDefWithClosed> Paths = new List<PathDefWithClosed>();
             List<PathDefWithClosed> FirstSweep = new List<PathDefWithClosed>();
-            List<PathDefWithClosed> LeftoverLines = new List<PathDefWithClosed>();
-            if (input.Count == 0) return LeftoverLines;
+
             try
             {
                 foreach (var p in input)
@@ -51,7 +233,7 @@ namespace GerberLibrary.Core
                     }
 
                 }
-                FirstSweep = StripOverlaps(FirstSweep);
+                FirstSweep = StripOverlaps(log, FirstSweep);
 
 
                 LeftoverLines.Add(FirstSweep[0]);
@@ -77,11 +259,11 @@ namespace GerberLibrary.Core
                         }
                     }
                 }
-                LeftoverLines = StripOverlaps(LeftoverLines);
+                LeftoverLines = StripOverlaps(log, LeftoverLines);
             }
             catch (Exception E)
             {
-                Console.WriteLine(E.Message);
+                log.AddString(String.Format(E.Message));
             }
 
             while (LeftoverLines.Count > 0)
@@ -116,11 +298,11 @@ namespace GerberLibrary.Core
                             List<PointD> DebugN = new List<PointD>();
                             List<int> Kinks = new List<int>();
                             List<int> KinkEnd = new List<int>();
-                            
+
                             Kinks.Add(0);
                             for (int i = 1; i < a.Vertices.Count; i++)
                             {
-                                var N1 = MathHelpers.Normal(a.Vertices[(i-1)], a.Vertices[i]);
+                                var N1 = MathHelpers.Normal(a.Vertices[(i - 1)], a.Vertices[i]);
                                 var N2 = MathHelpers.Normal(a.Vertices[i], a.Vertices[(i + 1) % a.Vertices.Count()]);
                                 if (N1.Dot(N2) < 0.8)
                                 {
@@ -131,18 +313,18 @@ namespace GerberLibrary.Core
 
                                 }
                             }
-                            KinkEnd.Add(a.Vertices.Count-1);
+                            KinkEnd.Add(a.Vertices.Count - 1);
 
                             double maxD = 0;
                             int maxSeg = 0;
-                            for(int i =0;i<Kinks.Count;i++)
+                            for (int i = 0; i < Kinks.Count; i++)
                             {
                                 double D = 0;
                                 for (int j = Kinks[i]; j < KinkEnd[i]; j++)
                                 {
                                     D += (a.Vertices[j] - a.Vertices[j + 1]).Length();
                                 }
-                                if (D>maxD)
+                                if (D > maxD)
                                 {
                                     maxD = D;
                                     maxSeg = i;
@@ -194,14 +376,14 @@ namespace GerberLibrary.Core
                         else
                         {
                             a.Vertices.Remove(a.Vertices.Last());
-                            Console.WriteLine("closed path with {0} points during stage 2: {1} reversematched", a.Vertices.Count(), matching);
+                            //Console.WriteLine("closed path with {0} points during stage 2: {1} reversematched", a.Vertices.Count(), matching);
                             P.Closed = true;
                         }
                     }
                     Paths.Add(P);
                 }
             }
-            Paths = StripOverlaps(Paths);
+            Paths = StripOverlaps(log, Paths);
             //  return Paths;
 
 
@@ -211,7 +393,7 @@ namespace GerberLibrary.Core
             while (Merges > 0)
             {
                 startat = lasthigh;
-                Merges = FindNextMerge(Paths, out lasthigh, startat);
+                Merges = FindNextMerge(log, Paths, out lasthigh, startat);
             }
             //return Paths;
 
@@ -230,7 +412,7 @@ namespace GerberLibrary.Core
 
                     int NewClosedCount = (from i in Paths where i.Closed == true select i).Count();
 
-                    Console.WriteLine("remaining open: {0}", NewClosedCount);
+                    log.AddString(String.Format("remaining open: {0}", NewClosedCount));
                     /*
                     var OpenPaths = (from i in Paths where i.Closed == false select i).ToArray();
                     //  foreach (var p in OpenPaths)
@@ -311,10 +493,12 @@ namespace GerberLibrary.Core
             {
                 Results.Add(Sanitize(p));
             }
+
+            log.PopActivity();
             return Results;
         }
 
-        private static List<PathDefWithClosed> StripOverlaps(List<PathDefWithClosed> Paths)
+        private static List<PathDefWithClosed> StripOverlaps(ProgressLog log, List<PathDefWithClosed> Paths)
         {
             List<PathDefWithClosed> Res = new List<PathDefWithClosed>();
             QuadTreeNode Root = new QuadTreeNode();
@@ -332,7 +516,7 @@ namespace GerberLibrary.Core
                 {
                     Res.Add(Paths[i]);
                 }
-               
+
             }
 
             Root.xstart = B.TopLeft.X - 10;
@@ -374,7 +558,7 @@ namespace GerberLibrary.Core
                     }
 
                     int max = Math.Max(4, (Paths[i].Vertices.Count * 50) / 100);
-              
+
                     if (nearcount <= max)
                     {
                         foreach (var a in Paths[i].Vertices)
@@ -387,8 +571,8 @@ namespace GerberLibrary.Core
                     else
                     {
                         Res.Add(Paths[i]);
-                        Console.WriteLine("{4}: {0} out of {1}/{2}/{3}", nearcount, max, Paths[i].Vertices.Count, (Paths[i].Vertices.Count * 90) / 100, i);
-                        Console.WriteLine("{0}: skipped!", i);
+                        log.AddString(String.Format("{4}: {0} out of {1}/{2}/{3}", nearcount, max, Paths[i].Vertices.Count, (Paths[i].Vertices.Count * 90) / 100, i));
+                        log.AddString(String.Format("{0}: skipped!", i));
                     }
                 }
             }
@@ -423,7 +607,7 @@ namespace GerberLibrary.Core
             }
         }
 
-        private static int FindNextMerge(List<PathDefWithClosed> Paths, out int highestnomatch, int startat = 0)
+        private static int FindNextMerge(ProgressLog log, List<PathDefWithClosed> Paths, out int highestnomatch, int startat = 0)
         {
             highestnomatch = 0;
             QuadTreeNode Root = new QuadTreeNode();
@@ -501,7 +685,7 @@ namespace GerberLibrary.Core
                             Paths[endmatch].Vertices.AddRange(Paths[i].Vertices);
                             if (Paths[endmatch].Vertices.First() == Paths[endmatch].Vertices.Last())
                             {
-                                Console.WriteLine("closed path with {0} points during stage 3a", Paths[endmatch].Vertices.Count());
+                                log.AddString(String.Format("closed path with {0} points during stage 3a", Paths[endmatch].Vertices.Count()));
                                 Paths[endmatch].Closed = true;
                             }
                             Paths.Remove(Paths[i]);
@@ -515,7 +699,7 @@ namespace GerberLibrary.Core
                             Paths[i].Vertices.AddRange(Paths[startmatch].Vertices);
                             if (Paths[i].Vertices.First() == Paths[i].Vertices.Last())
                             {
-                                Console.WriteLine("closed path with {0} points during stage 3b", Paths[i].Vertices.Count());
+                                log.AddString(String.Format("closed path with {0} points during stage 3b", Paths[i].Vertices.Count()));
                                 Paths[i].Closed = true;
                             }
                             Paths.Remove(Paths[startmatch]);
@@ -685,7 +869,7 @@ namespace GerberLibrary.Core
             for (int i = 0; i < Paths.Count; i++)
             {
                 var P = Paths[i];
-                if (P.Closed == false)
+                if (P.Closed == false && P.Vertices.Count > 1)
                 {
                     var PF = P.Vertices[0];
                     var PF2 = P.Vertices[1];
@@ -706,13 +890,24 @@ namespace GerberLibrary.Core
                         PointD Dir2;
                         if (S.Side == SideEnum.Start)
                         {
-                            var S2 = Paths[S.PathID].Vertices[1];
-                            Dir2 = S2 - S.Point;
-                            Dir2.Normalize();
+                            if (Paths[S.PathID].Vertices.Count > 1)
+                            {
+                                var S2 = Paths[S.PathID].Vertices[1];
+                                Dir2 = S2 - S.Point;
+                                Dir2.Normalize();
+                            }
+                            else
+                            {
+                                var S2 = Paths[S.PathID].Vertices[0];
+                                Dir2 = S2 - S.Point;
+                                Dir2.Normalize();
+                            }
                         }
                         else
                         {
-                            var S2 = Paths[S.PathID].Vertices[Paths[S.PathID].Vertices.Count() - 2];
+                            int idx = Paths[S.PathID].Vertices.Count() - 2;
+                            while (idx < 0) idx++;
+                            var S2 = Paths[S.PathID].Vertices[idx];
                             Dir2 = S2 - S.Point;
                             Dir2.Normalize();
                         }
@@ -1148,6 +1343,58 @@ namespace GerberLibrary.Core
             {
                 G.DrawLine(P, 0.0f, X, width, X);
             }
+        }
+
+        public static Color RefractionBandI(int inp)
+        {
+
+            return RefractionBand(inp / 6.0f);
+        }
+        public static Color RefractionBand(float Inp)
+        {
+            float adjusted = (((float)Math.Floor(Inp * 6.0f) / 6.0f) * 0.3f) + 0.2f;
+            return Refraction(adjusted);
+        }
+
+        public static Color RefractionNormalized(float Space)        
+        {
+            return Refraction(Space * 0.25f + 0.3f);
+        }
+
+
+        public static Color Refraction(float Space)
+        {
+            float space = 0.4f + 0.3f;//muv.x;
+            float A = 4.0f;
+            float B = A + space;
+            float C = B + space;
+            float c1 = (float)(Math.Max(0.0f, 0.35f - 0.45f * Math.Cos(Space * 6.28f * A) * Math.Sin(Space * 2.14f + 0.8f)));
+            float c2 = (float)(0.35 - 0.35 * Math.Cos(Space * 6.28 * B) * Math.Sin(Space * 2.14 + 0.8)); ;
+            float c3 = (float)(0.35 - 0.35 * Math.Cos(Space * 6.28 * C) * Math.Sin(Space * 2.14 + 0.8)); ;
+
+
+
+            // Time varying pixel color
+            float r = c1;
+            float g = c2;
+            float b = c3;
+
+
+            float expo = 0.5f;//muv.y * 2.0 + 0.1;
+            byte RR = (byte)(Math.Pow(r, expo) * 255.0);
+            byte GG = (byte)(Math.Pow(g, expo) * 255.0);
+            byte BB = (byte)(Math.Pow(b, expo) * 255.0);
+
+            return Color.FromArgb(RR, GG, BB);
+
+        }
+
+        public static int LayerOrdering(BoardSide side, BoardLayer layer)
+        {
+            int ID = 40 - (int)layer;
+            if (side == BoardSide.Both) return ID + 100;
+            if (side == BoardSide.Bottom) return -ID;
+            return ID;
         }
     }
 

@@ -1,15 +1,22 @@
-﻿using GerberLibrary.Core;
+﻿using ArtWork;
+using GerberLibrary.Core;
+using GlmNet;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using TilingLibrary;
 
 namespace Artwork
 {
+    using Path = List<ClipperLib.IntPoint>;
+    using Paths = List<List<ClipperLib.IntPoint>>;
+
     public class SolidQuadTreeItem : QuadTreeItem
     {
         int _x;
@@ -127,6 +134,7 @@ namespace Artwork
         public QuadTreeNode MaskTree;
         public QuadTreeNode ArtTree;
         public Tiling.TilingDefinition TD = new Tiling.TilingDefinition();
+        
         public List<Tiling.Polygon> SubDivPoly = new List<Tiling.Polygon>();
 
         public static Font GetAdjustedFont(Graphics GraphicRef, string GraphicString, Font OriginalFont, float ContainerWidth, float MaxFontSize, float MinFontSize, bool SmallestOnFail)
@@ -221,9 +229,9 @@ namespace Artwork
             float BaseScale2 = 1.0f;
 
             // g.FillPath(new SolidBrush(Color.Teal), GP);
-             TheSettings = Rend.GetHashSettings(Label, huerange);
-          
-            RenderIconBackdrop(g, TheSettings.BackGroundColor,  TheSettings, x1, x2, y1, y2, 0, Rend);
+            TheSettings = Rend.GetHashSettings(Label, huerange);
+
+            RenderIconBackdrop(g, TheSettings.BackGroundColor, TheSettings, x1, x2, y1, y2, 0, Rend);
             Rend.DrawTiling(TheSettings, M, G3, Color.FromArgb(40, Color.Black), Color.Black, Math.Max(3, 4.5f * BaseScale2), false);
             Rend.DrawTiling(TheSettings, M, G3, TheSettings.BackgroundHighlight, Color.Black, Math.Max(1.4f, 3 * BaseScale2), false);
             Rend.DrawTiling(TheSettings, M, G3, Color.FromArgb(100, 255, 255, 0), Color.Black, Math.Max(1.0f, 1.4f * BaseScale2), false);
@@ -251,7 +259,7 @@ namespace Artwork
 
         }
 
-        private static void RenderIconBackdrop(Graphics g,Color C, Settings TheSettings, float x1, float x2, float y1, float y2, int offset, TINRSArtWorkRenderer R)
+        private static void RenderIconBackdrop(Graphics g, Color C, Settings TheSettings, float x1, float x2, float y1, float y2, int offset, TINRSArtWorkRenderer R)
         {
             R.TD.Create(TheSettings.TileType);
             var M = R.TD.NormalizeSize();
@@ -260,7 +268,7 @@ namespace Artwork
             float w = x2 - x1;
             float h = y2 - y1;
 
-            for (float s = 0.6f; s < 2.0; s += 0.5f)
+            for (float s = 0.3f; s < .5; s += 0.05f)
             {
 
                 List<PointF> P = new List<PointF>();
@@ -268,14 +276,31 @@ namespace Artwork
                 P.Add(new PointF((T.B.x - M.x) * w * s + w / 2, (T.B.y - M.y) * h * s + h / 2));
                 P.Add(new PointF((T.C.x - M.x) * w * s + w / 2, (T.C.y - M.y) * h * s + h / 2));
 
-                Matrix Mm = new Matrix();
-                Mm.RotateAt(360.0f *(float)TheSettings.Rand.NextDouble(), new PointF(w / 2, h / 2));
-                var Pa = P.ToArray();
-                Mm.TransformPoints(Pa);
-                g.FillPolygon(new SolidBrush(C), Pa);
+                float ox = (float)TheSettings.Rand.NextDouble()* w/4;
+                float oy = (float)TheSettings.Rand.NextDouble()* h/4;
+                float baserotation = 360.0f * (float)TheSettings.Rand.NextDouble();
+                for (int i = 0; i < 5; i++)
+                {
+                    Matrix Mm = new Matrix();
+                    Mm.RotateAt(360.0f * baserotation + (360.0f*i)/5.0f, new PointF(w / 2, h / 2));
+                    Mm.Translate(ox, oy);
+                    var Pa = P.ToArray();
+                    Mm.TransformPoints(Pa);
+                    //g.FillPolygon(new SolidBrush(C), Pa);
+
+                    Matrix Mm2 = new Matrix();
+                    Mm2.RotateAt(360.0f * baserotation - (360.0f * i) / 5.0f, new PointF(w / 2, h / 2));
+                    Mm2.Translate(ox, oy);
+                    //Mm2.Scale(-1, 1);
+                    var Pa2 = P.ToArray();
+                    Mm2.TransformPoints(Pa2);
+                    g.FillPolygon(new SolidBrush(C), Pa2);
+
+
+                }
             }
 
-//            g.FillEllipse(new SolidBrush(C), new RectangleF(x1 + 7, y1 + 7 , x2 - x1, y2 - y1));
+            //            g.FillEllipse(new SolidBrush(C), new RectangleF(x1 + 7, y1 + 7 , x2 - x1, y2 - y1));
         }
 
         public static void SaveMultiIcon(string outputfile, string label, float huerange = -1)
@@ -342,27 +367,26 @@ namespace Artwork
                 Delaunay.Render(new GraphicsGraphicsInterface(G), FG, BG);
             }
 
-            if (S.Mode == Settings.ArtMode.Tiling)
+            if (S.Mode == Settings.ArtMode.Tiling )
             {
                 if (Clear) G.Clear(BG);
-                PointF[] ThePoints = new PointF[3] { new PointF(), new PointF(), new PointF() };
-
+                Pen P = new Pen(FG, linewidth);
                 for (int j = 0; j < SubDivPoly.Count; j++)
                 {
                     var a = SubDivPoly[j];
-                    for (int i = 0; i < 3; i++)
+                    PointF[] ThePoints = new PointF[a.Vertices.Count];
+                    for (int i = 0; i < a.Vertices.Count; i++)
                     {
-                        ThePoints[i].X = (float)a.Vertices[i].x;
-                        ThePoints[i].Y = (float)a.Vertices[i].y;
+                        ThePoints[i] = new PointF((float)a.Vertices[i].x,(float)a.Vertices[i].y);
                     }
-                    G.DrawPolygon(new Pen(FG, linewidth), ThePoints.ToArray());
+                    G.DrawPolygon(P,  ThePoints);
                 }
             }
         }
 
         public static Color GetHashColor(string text)
         {
-             return MakeColor( HashHue(text));
+            return MakeColor(HashHue(text));
         }
 
         public static Color GetHashHighlight(string text)
@@ -373,8 +397,12 @@ namespace Artwork
         public static Color MakeColor(double H)
         {
             int r, g, b;
-            GerberLibrary.MathHelpers.HsvToRgb(H, 1.0, 0.5, out r, out g, out b);
-            return Color.FromArgb(r, g, b);
+
+
+//            GerberLibrary.MathHelpers.HsvToRgb(H, 1.0, 0.5, out r, out g, out b);
+            return Helpers.Refraction(((float)H / 360.0f)*0.3f + 0.2f);
+            
+//            return Color.FromArgb(r, g, b);
 
         }
         public static Color MakeHighlight(double H)
@@ -382,8 +410,12 @@ namespace Artwork
             int r, g, b;
             double DH = ((H + 60) % 120) - 60;
             H += DH * 0.4;
-            GerberLibrary.MathHelpers.HsvToRgb(H, 1.0, 0.7, out r, out g, out b);
-            return Color.FromArgb(r, g, b);
+
+            return Helpers.Refraction(((float)H / 360.0f) * 0.3f + 0.2f);
+
+
+//            GerberLibrary.MathHelpers.HsvToRgb(H, 1.0, 0.7, out r, out g, out b);
+  //          return Color.FromArgb(r, g, b);
         }
 
         private static double HashHue(string text)
@@ -391,7 +423,7 @@ namespace Artwork
             double H = 0;
             for (int i = 0; i < text.Length; i++)
             {
-                H += ((text[i] - 'A') % 26) * (360.0/26);
+                H += ((text[i] - 'A') % 26) * (360.0 / 26);
                 H = H % 360;
             }
 
@@ -401,6 +433,8 @@ namespace Artwork
         public Settings GetHashSettings(string text, float huerange = -1)
         {
             Settings S = new Settings();
+            S.MarcelPlating = false;
+
             S.BackGroundColor = GetHashColor(text);
             S.BackgroundHighlight = GetHashHighlight(text);
             if (huerange > -1)
@@ -408,7 +442,7 @@ namespace Artwork
                 S.BackGroundColor = MakeColor(huerange * 360.0f);
                 S.BackgroundHighlight = MakeHighlight(huerange * 360.0f);
             }
-            S.TileType = Tiling.TilingType.Conway;
+            S.TileType = Tiling.TilingType.RegularTriangle;
             S.MaxSubDiv = 6;
             for (int i = 0; i < text.Length; i++)
             {
@@ -431,6 +465,51 @@ namespace Artwork
 
             float ThresholdLevel = TheSettings.Threshold * 0.01f;
 
+
+            try
+            {
+                BitmapData srcData = Mask.LockBits(new Rectangle(0,0,Mask.Width, Mask.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                
+                unsafe
+                {
+                    
+                    byte* srcPointer = (byte*)srcData.Scan0;
+
+                    for (int yy = 0; yy < Mask.Height; yy++)
+                    {
+                        for (int xx = 0; xx < Mask.Width; xx++)
+                    {
+                            byte B = srcPointer[0]; // Blue
+                            Color C = Color.FromArgb(srcPointer[2], srcPointer[1], srcPointer[0]);
+                            bool doit = false;
+                            if (TheSettings.InvertSource)
+                            {
+                                doit = C.GetBrightness() > ThresholdLevel;
+                            }
+                            else
+                            {
+                                doit = C.GetBrightness() < ThresholdLevel;
+                            }
+                            if (doit)
+                            {
+                                MaskTree.Insert(xx, yy, new SolidQuadTreeItem() { x = (int)xx, y = (int)yy }, 8);
+                            }
+
+
+                            srcPointer += 4;
+                        }
+                        srcPointer += (srcData.Stride - (Mask.Width *4));
+                    }
+                }
+
+                Mask.UnlockBits(srcData);
+            }
+            catch (InvalidOperationException e)
+            {
+
+            }
+            /*
+
             for (int x = 0; x < Mask.Width; x++)
             {
                 for (int y = 0; y < Mask.Height; y++)
@@ -447,17 +526,21 @@ namespace Artwork
                     }
                     if (doit)
                     {
-
                         MaskTree.Insert(x, y, new SolidQuadTreeItem() { x = (int)x, y = (int)y }, 8);
                     }
                 }
             }
 
+    */
         }
 
-
-        public int BuildStuff(Bitmap Mask, Settings TheSettings)
+        public int BuildStuff(Bitmap aMask, Settings TheSettings)
         {
+            DirectBitmap Mask = new DirectBitmap(aMask.Width, aMask.Height);
+            Graphics mg = Graphics.FromImage(Mask.Bitmap);
+            mg.DrawImage(aMask, 0, 0);
+            
+
             int i = Math.Max(Mask.Width, Mask.Height);
             int R = 1;
             while (R < i) R *= 2;
@@ -475,7 +558,7 @@ namespace Artwork
                         {
                             for (int y = 0; y < Mask.Height; y++)
                             {
-                                var C = Mask.GetPixel(x, y);
+                                var C = Mask.GetPixelFast(x, y);
                                 bool doit = false;
                                 if (TheSettings.InvertSource)
                                 {
@@ -506,7 +589,7 @@ namespace Artwork
                         {
                             for (int y = 0; y < Mask.Height; y++)
                             {
-                                var C = Mask.GetPixel(x, y);
+                                var C = Mask.GetPixelFast(x, y);
                                 bool doit = false;
                                 if (TheSettings.InvertSource)
                                 {
@@ -525,8 +608,6 @@ namespace Artwork
                             }
                         }
 
-
-
                         Delaunay.Build(ArtTree, TheSettings.DegreesOff);
 
                         var Elapsed = DateTime.Now - rR;
@@ -537,18 +618,204 @@ namespace Artwork
                     {
                         TD.Create(TheSettings.TileType);
                         var P = TD.CreateBaseTriangle(TheSettings.BaseTile, 1000);
+                        var P2 = TD.CreateBaseTriangle(TheSettings.BaseTile, 1000);
                         P.Rotate(TheSettings.DegreesOff);
                         P.AlterToFit(Mask.Width, Mask.Height);
+                        P2.Rotate(TheSettings.DegreesOff);
+                        P2.AlterToFit(Mask.Width, Mask.Height);
+
+                        if (TheSettings.Symmetry)
+                        {
+                            P.ShiftToEdge(Mask.Width / 2, Mask.Height / 2);
+                            P2.ShiftToEdge(Mask.Width / 2, Mask.Height / 2);
+                            P2.Flip(Mask.Width / 2, Mask.Height / 2);
+                            if (TheSettings.SuperSymmetry)
+                            {
+                                P2.MirrorAround(Mask.Width / 2, Mask.Height / 2);
+                            }
+                        }
+
                         DateTime rR = DateTime.Now;
-                        SubDivPoly = TD.SubdivideAdaptive(P, TheSettings.MaxSubDiv, MaskTree);
+                        SubDivPoly = TD.SubdivideAdaptive(P, TheSettings.MaxSubDiv, MaskTree, TheSettings.alwayssubdivide);
+
+                        if (TheSettings.Symmetry)
+                        {
+                            SubDivPoly.AddRange(TD.SubdivideAdaptive(P2, TheSettings.MaxSubDiv, MaskTree, TheSettings.alwayssubdivide));
+                        }
+
+                        if (TheSettings.xscalesmallerlevel != 0)
+                        {
+                            float midx = Mask.Width / 2.0f;
+                            float width = Mask.Width;
+                            float offs = TheSettings.xscalecenter * 0.01f * width;
+                            foreach (var A in SubDivPoly)
+                            {
+                                var M = A.Mid();
+                                float scaler = 1.0f - ((float)(M.x - offs) / width) * TheSettings.xscalesmallerlevel * 0.01f;
+                                //scaler = Math.Max(0, Math.Min(1.0f, scaler));
+                                A.ScaleDown(TheSettings.scalingMode, scaler);
+                            }
+                        }
+                        if (TheSettings.scalesmallerfactor != 1.0f)
+                        {
+                            foreach (var A in SubDivPoly)
+                            {
+                                A.ScaleDown(Settings.TriangleScaleMode.Balanced, TheSettings.scalesmallerfactor);
+                            }
+                        }
+
+                        if (TheSettings.scalesmaller != 0)
+                        {
+                            float scaler = Math.Abs(TheSettings.scalesmaller);
+                            if (TheSettings.scalesmaller > 0)
+                            {
+                                scaler = scaler / 10.0f;
+                            }
+                            else
+                            {
+                                scaler = -scaler / 10.0f;
+                            }
+                            foreach (var A in SubDivPoly)
+                            {
+
+                                if (A.depth - TheSettings.scalesmallerlevel <= 1)
+                                {
+
+                                }
+                                else
+                                {
+                                    A.ScaleDown(TheSettings.scalingMode, (1 + scaler * (1.0f / (A.depth - TheSettings.scalesmallerlevel))));
+
+                                }
+                            }
+                        }
+                        if (TheSettings.distanceToMaskScale != 0)
+                        {
+                            float scaler = Math.Abs(TheSettings.distanceToMaskScale);
+                            if (TheSettings.distanceToMaskScale > 0)
+                            {
+                                scaler = scaler / 10.0f;
+                            }
+                            else
+                            {
+                                scaler = -scaler / 10.0f;
+                            }
+
+
+                            float aThresholdLevel = TheSettings.Threshold * 0.01f;
+
+                            foreach (var A in SubDivPoly)
+                            {
+
+                                var m = A.Mid();
+                                float sum = GetPixelSum(m, Mask, TheSettings.distanceToMaskRange, aThresholdLevel, TheSettings.InvertSource);
+                                //if (sum > 1) sum = 1;
+                                A.ScaleDown(TheSettings.scalingMode, (scaler * sum));
+
+
+                            }
+                        }
+
+
+                        if (TheSettings.MarcelPlating)
+                        {
+                            List<Tiling.Polygon> MarcelShapes = new List<Tiling.Polygon>();
+                            foreach (var A in SubDivPoly)
+                            {
+
+
+                                MarcelShape MS = new MarcelShape();
+                                MarcelShape MS2 = new MarcelShape();
+
+                                foreach (var v in A.Vertices)
+                                {
+                                    MS2.Vertices.Add(new ClipperLib.IntPoint((long)((v.x+1000)*1000), (long)((v.y+1000)*1000)));
+                                }
+
+                                MS.ShrinkFromShape(MS2.Vertices, TheSettings.Gap /2 + TheSettings.Rounding/2 );
+                                Paths Ps = new Paths();
+
+                                Ps.AddRange(MS.BuildOutlines(TheSettings.Rounding / 2.0f));
+                                if (TheSettings.BallRadius > 0) Ps.AddRange(MS.BuildHoles(TheSettings.BallRadius));
+
+                                foreach(var p in Ps)
+                                {
+                                    Tiling.Polygon Poly = new Tiling.Polygon();
+                                    Poly.Vertices.AddRange(from a in p select new vec2((a.X) * 0.001f-1000, (a.Y ) * 0.001f-1000));
+                                    MarcelShapes.Add(Poly);
+                                }
+
+
+                            }
+                            SubDivPoly.Clear();
+                            SubDivPoly = MarcelShapes;
+                        }
+
                         var Elapsed = DateTime.Now - rR;
                         return (int)Elapsed.TotalMilliseconds;
                     }
 
+          
             };
             return 0;
         }
 
+
+
+        private float GetPixelSum(vec2 m, DirectBitmap mask, float distanceToMaskRange, float ThresholdLevel, bool invert)
+        {
+            float sum = 0;
+            if (distanceToMaskRange == 0) distanceToMaskRange = 0.001f;
+            float wrange = distanceToMaskRange * mask.Width * 0.5f;
+            float hrange = distanceToMaskRange * mask.Width * 0.5f;
+            float total = 0;
+            float[] cp = new float[40];
+            float[] sp = new float[40];
+            for (int p = 0; p < 40; p++)
+
+            {
+                double P = (p * Math.PI * 2) / 40.0f;
+                sp[p] = (float)Math.Sin(P) * wrange;
+                cp[p] = (float)Math.Cos(P) * wrange ;
+            }
+
+            for (int ring = 1;ring<10;ring++)
+            {
+                float RW = ring / 10.0f;
+                for (int p = 0; p < 40; p++)
+                    
+                {
+                    int x = (int)(cp[p] * RW + m.x);
+                    int y = (int)(sp[p] * RW + m.y);
+                    total++;
+                    if (x >= 0 && x < mask.Width)
+                    {
+                        if (y >= 0 && y < mask.Height)
+                        {
+                            var C = mask.GetPixelFast(x, y);
+                            float br = C.GetBrightness();
+                            bool doit = false;
+                            if (invert)
+                            {
+                                doit = br > ThresholdLevel;
+                            }
+                            else
+                            {
+                                doit = C.GetBrightness() < ThresholdLevel;
+                            }
+                            if (doit)
+                            {
+                                sum++;
+                            }
+
+                        }
+                    }
+                }
+
+            }
+            
+            return 1000*sum / total;
+        }
     }
 
 }

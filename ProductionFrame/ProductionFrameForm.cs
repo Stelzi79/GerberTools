@@ -20,12 +20,21 @@ namespace ProductionFrame
             InitializeComponent();
             innerWidth.Maximum = 6000;
             innerHeight.Maximum = 6000;
+
+            fiducialsListData.Rows.Add("Top", (double)leftEdge.Value / 2.0, (double)innerHeight.Value + (double)topEdge.Value + (double)topEdge.Value / 2.0, 1.0, 3.0);
+            fiducialsListData.Rows.Add("Top", (double)leftEdge.Value /2.0, (double)topEdge.Value / 2.0, 1.0, 3.0);
+            fiducialsListData.Rows.Add("Top", (double)innerWidth.Value + (double)leftEdge.Value + (double)leftEdge.Value / 2.0, (double)topEdge.Value / 2.0, 1.0, 3.0);
+
+            fiducialsListData.Rows.Add("Bottom", (double)leftEdge.Value / 2.0, (double)innerHeight.Value + (double)topEdge.Value + (double)topEdge.Value / 2.0, 1.0, 3.0);
+            fiducialsListData.Rows.Add("Bottom", (double)leftEdge.Value / 2.0, (double)topEdge.Value / 2.0, 1.0, 3.0);
+            fiducialsListData.Rows.Add("Bottom", (double)innerWidth.Value + (double)leftEdge.Value + (double)leftEdge.Value / 2.0, (double)topEdge.Value / 2.0, 1.0, 3.0);
         }
 
         private void button1_Click(object sender, EventArgs e)
         {
             if (saveFileDialog1.ShowDialog() == DialogResult.OK)
             {
+                int polyid = 0;
                 string fname = System.IO.Path.GetFileName(saveFileDialog1.FileName);
                 string fnamenoext = System.IO.Path.GetFileNameWithoutExtension(saveFileDialog1.FileName);
                 string OutName = "";
@@ -38,7 +47,6 @@ namespace ProductionFrame
                 {
                     OutName = saveFileDialog1.FileName;
                 }
-
 
 
                 List<string> Files = new List<string>();
@@ -71,12 +79,11 @@ namespace ProductionFrame
                     double side = LE / 2.0;
                     double top = TE / 2.0;
 
-
+      
                     DrillHoles.Add(new PointD(side, top));
                     DrillHoles.Add(new PointD(OuterWidth - side, top));
                     DrillHoles.Add(new PointD(OuterWidth - side, OuterHeight - top));
                     DrillHoles.Add(new PointD(side, OuterHeight - top));
-
 
                     ExcellonFile EF = new ExcellonFile();
 
@@ -93,28 +100,44 @@ namespace ProductionFrame
                     Files.Add(OutName + ".txt");
                 }
 
-
-                PolyLine PL = new PolyLine();
+                // board outline
+                PolyLine PL = new PolyLine(polyid++);
                 PL.MakeRoundedRect(new PointD(0, 0), new PointD(OuterWidth, OuterHeight), (double)roundedOuterCorners.Value);
                 Outline.AddPolyLine(PL, 0);
-                PolyLine PL2 = new PolyLine();
+                PolyLine PL2 = new PolyLine(polyid++);
 
                 PL2.MakeRoundedRect(new PointD(LE, TE), new PointD(InnerWidth + LE, InnerHeight + TE), (double)roundedInnerCorners.Value);
                 Outline.AddPolyLine(PL2, 0);
 
-                if (fiducials.Checked)
+                #region fiducials
+
+                List<PointD> Fiducials = new List<PointD>();
+
+                foreach (DataGridViewRow dataRow in fiducialsListData.Rows)
                 {
-                    List<PointD> Fiducials = new List<PointD>();
-                    Fiducials.Add(new PointD(LE * 2.0, TE / 2.0));
-                    Fiducials.Add(new PointD(OuterWidth - LE * 2.0, TE / 2.0));
-                    Fiducials.Add(new PointD(OuterWidth - LE * 2.0, OuterHeight - TE / 2.0));
-                    Fiducials.Add(new PointD(LE * 2.0, OuterHeight - TE / 2.0));
-                    foreach (var A in Fiducials)
+                    PointD fiducialPoint = new PointD();
+
+                    if (dataRow.Cells != null && dataRow.Cells["XCoordinate"].Value != null && dataRow.Cells["YCoordinate"].Value != null)
                     {
-                        TopCopper.AddFlash(A, 1.0);
-                        TopSolderMask.AddFlash(A, 3.0);
+                        fiducialPoint.X = double.Parse(dataRow.Cells["XCoordinate"].Value.ToString());
+                        fiducialPoint.Y = double.Parse(dataRow.Cells["YCoordinate"].Value.ToString());
+
+                        if (string.Equals(dataRow.Cells["fiducialLayer"].Value.ToString(), "Top"))
+                        {
+                            TopCopper.AddFlash(fiducialPoint, double.Parse(dataRow.Cells["fiducialCopperDiameter"].Value.ToString())/2.0);
+                            TopSolderMask.AddFlash(fiducialPoint, double.Parse(dataRow.Cells["fiducialSolderMaskDiam"].Value.ToString())/2.0);
+                        }
+                        else
+                        {
+                            BottomCopper.AddFlash(fiducialPoint, double.Parse(dataRow.Cells["fiducialCopperDiameter"].Value.ToString())/2.0);
+                            BottomSolderMask.AddFlash(fiducialPoint, double.Parse(dataRow.Cells["fiducialSolderMaskDiam"].Value.ToString())/2.0);
+                        }
                     }
+
                 }
+
+                #endregion
+
                 string FrameTitle = FrameTitleBox.Text;
 
                 if (FrameTitle.Length > 0)
@@ -150,12 +173,24 @@ namespace ProductionFrame
                 Files.Add(OutName + ".gbl");
                 Files.Add(OutName + ".gbs");
                 GerberImageCreator GIC = new GerberImageCreator();
-                GIC.AddBoardsToSet(Files);
+                GIC.AddBoardsToSet(Files, new StandardConsoleLog());
                 
                 GIC.WriteImageFiles(OutName, 50 );
                 // Gerber.SaveGerberFileToImage(OutName + ".gko", OutName + ".gko.png", 200, Color.Black, Color.White);
                 // Gerber.SaveGerberFileToImage(OutName + ".gto", OutName + ".gto.png", 200, Color.Black, Color.White);
 
+            }
+        }
+
+        private void addHolesCheck_CheckedChanged(object sender, EventArgs e)
+        {
+            if (addHolesCheck.Checked)
+            {
+                holeDiameter.Enabled = true;
+            }
+            else
+            {
+                holeDiameter.Enabled = false;
             }
         }
     }

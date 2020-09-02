@@ -15,10 +15,10 @@ namespace GerberLibrary
         {
             GerberSplitter GS = new GerberSplitter();
             GerberNumberFormat Format = new GerberNumberFormat();
-            Format.DigitsAfter = 3;
-            Format.DigitsBefore = 2;
+            Format.DigitsBefore = 3;
+            Format.DigitsAfter = 6;
 
-            GS.Split("X12345Y12345", Format);
+            GS.Split("X123456789Y123456789", Format);
 
             if (Gerber.ShowProgress)
             {
@@ -35,8 +35,9 @@ namespace GerberLibrary
         /// <param name="DX">MM</param>
         /// <param name="DY">MM</param>
         /// <param name="Angle">Degrees</param>
-        public static void Transform(string sourcefile, string destfile, double DX, double DY, double DXp, double DYp, double AngleInDeg = 0) 
+        public static void Transform(ProgressLog log,   string sourcefile, string destfile, double DX, double DY, double DXp, double DYp, double AngleInDeg = 0) 
         {
+            log.PushActivity("Gerber Transform");
             List<String> lines = new List<string>();
             List<String> outlines = new List<string>();
 
@@ -61,14 +62,14 @@ namespace GerberLibrary
 
             if (Gerber.WriteSanitized) Gerber.WriteAllLines(sourcefile + ".sanitized.txt", lines);
          //   PolyLineSet Parsed = new PolyLineSet("parsed gerber");
-            ParsedGerber Parsed = PolyLineSet.ParseGerber274x(lines, true);
+            ParsedGerber Parsed = PolyLineSet.ParseGerber274x(log, lines, true, false, new GerberParserState() { GenerateGeometry = false });
 
             if (Gerber.ShowProgress)
             {
-                Console.WriteLine("found apertures: ");
+                log.AddString("found apertures: ");
                 foreach (var a in Parsed.State.Apertures)
                 {
-                    Console.WriteLine(a.Value.ToString());
+                    log.AddString(a.Value.ToString());
                 }
             }
             
@@ -165,18 +166,18 @@ namespace GerberLibrary
                     GCC.Decode(lines[i], CoordinateFormat);
                     if (GCC.numbercommands.Count < 1)
                     {
-                        Console.WriteLine("Skipping bad aperture definition: {0}", lines[i]);
+                        log.AddString(String.Format("Skipping bad aperture definition: {0}", lines[i]));
                     }
                     else
                     {
                         int ATID = (int)GCC.numbercommands[0];
                         var Aperture = Parsed.State.Apertures[ATID];
-                        if (Gerber.ShowProgress) Console.WriteLine("found " + Aperture.ToString());
+                        if (Gerber.ShowProgress) log.AddString(String.Format("found " + Aperture.ToString()));
                         string gerb = Aperture.BuildGerber(CoordinateFormat, AngleInDeg);
 
                         if ((Aperture.ShapeType == GerberApertureShape.Compound || Aperture.ShapeType == GerberApertureShape.Macro) && Parsed.State.ApertureMacros[Aperture.MacroName].Written == false)
                         {
-                            Console.WriteLine("Macro type defined - skipping");
+                            log.AddString(String.Format("Macro type defined - skipping"));
                         }
                         else
                         {
@@ -207,8 +208,8 @@ namespace GerberLibrary
                             case 4: DumpToOutput = true; break;
                             case 90: CoordinateFormat.Relativemode = false; break;
                             case 91: CoordinateFormat.Relativemode = true; break;
-                            case 71: CoordinateFormat.Multiplier = 1.0f; break;
-                            case 70: CoordinateFormat.Multiplier = 25.4f; break;
+                            case 71: CoordinateFormat.Multiplier = 1.0d; break;
+                            case 70: CoordinateFormat.Multiplier = 25.4d; break;
                         }
                     }
                     if (DumpToOutput)
@@ -216,7 +217,7 @@ namespace GerberLibrary
                         outlines.Add(lines[i]);
                         if (lines[i].Contains("LNData"))
                         {
-                            Console.WriteLine(" heh");
+                            log.AddString(String.Format(" heh"));
                         }
                         if (lines[i][0] == '%')
                         {
@@ -246,7 +247,7 @@ namespace GerberLibrary
                                 }
                             }
                             moveswritten++;
-                            Console.WriteLine(" Pure D Code: {0}", lines[i]);
+                            log.AddString(String.Format("Pure D Code: {0}", lines[i]));
                         }
                         else
                         if (GS.Has("X") || GS.Has("Y") || (GS.Has("D") && GS.Get("D") < 10))
@@ -267,23 +268,27 @@ namespace GerberLibrary
                             LastX = X;
                             LastY = Y;
                            GetTransformedCoord(DX, DY, DXp, DYp, Angle, CA, SA, CoordinateFormat, translate, ref X, ref Y);
-                            if (GS.Has("G") && Angle != 0)
+                            if ((GS.Has("I") || GS.Has("J"))  && Angle != 0)
                             {
-                                int g = (int)GS.Get("G");
-                                if (g == 2 || g == 3)
+                             //   int g = (int)GS.Get("G");
+                              //  if (g == 2 || g == 3)
                                 {
                                     double I = 0;
                                     double J = 0;
-                                    if (GS.Has("I")) I = GS.Get("I");
-                                    if (GS.Has("J")) J = GS.Get("J");
-                                    double nJ = J * CA + I * SA;
-                                    double nI = -J * SA + I * CA;
-                                    I = nI;
-                                    J = nJ;
-                                  //  GS.Set("I", Math.Abs(I));
-                                  //  GS.Set("J", Math.Abs(J));
-                                    GS.Set("I", I);
-                                    GS.Set("J", J);
+                                    bool arc = false;
+                                    if (GS.Has("I")) { I = GS.Get("I"); arc = true; };
+                                    if (GS.Has("J")) {J = GS.Get("J"); arc = true; };
+                                    if (arc)
+                                    {
+                                        double nJ = J * CA + I * SA;
+                                        double nI = -J * SA + I * CA;
+                                        I = nI;
+                                        J = nJ;
+                                        //  GS.Set("I", Math.Abs(I));
+                                        //  GS.Set("J", Math.Abs(J));
+                                        GS.Set("I", I);
+                                        GS.Set("J", J);
+                                    }
                                 }
                             }
                             GS.Set("X", X);
@@ -305,7 +310,7 @@ namespace GerberLibrary
                         outlines.Add(GS.Rebuild(CoordinateFormat));
                         if (PureD)
                         {
-                            Console.WriteLine("pureD");
+                            log.AddString(String.Format("pureD"));
                         }
 
                     }
@@ -330,11 +335,12 @@ namespace GerberLibrary
             }
             catch (Exception E)
             {
-                Console.WriteLine(E.Message);
+                log.AddString(String.Format(E.Message));
             }
+            log.PopActivity();
         }
 
-        private static void GetTransformedCoord(double DX, double DY, double DXp, double DYp, double Angle, double CA, double SA, GerberNumberFormat CoordinateFormat, bool translate, ref double X, ref double Y)
+        public static void GetTransformedCoord(double DX, double DY, double DXp, double DYp, double Angle, double CA, double SA, GerberNumberFormat CoordinateFormat, bool translate, ref double X, ref double Y)
         {
             if (translate)
             {
@@ -354,7 +360,6 @@ namespace GerberLibrary
                 Y = (Y * CoordinateFormat.Multiplier + DY) / CoordinateFormat.Multiplier;
             }
         }
-
-
     }
 }
+

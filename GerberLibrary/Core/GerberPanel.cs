@@ -13,13 +13,57 @@ using GerberLibrary.Core;
 using Ionic.Zip;
 using TriangleNet;
 using TriangleNet.Geometry;
-
+using System.Threading.Tasks;
 
 namespace GerberLibrary
 {
-    public interface ProgressLog
+    public abstract class ProgressLog
     {
-        void AddString(string text, float progress = -1);
+        public abstract void AddString(string text, float progress = -1);
+        public void PushActivity(string activitiy)
+        {
+        //    AddString("Activity: " + activitiy);
+            ActivityStack.Add(activitiy);
+        }
+        public void PopActivity()
+        {
+            ActivityStack.Remove(ActivityStack.Last());
+        }
+
+        public string GetDefaultText(string text, float progress)
+        {
+            string output = "";
+            foreach (var a in ActivityStack)
+            {
+                output += a + " -> ";
+            }
+
+            if (progress > -1)
+            {
+                return (output + text + String.Format("({0}%)", (int)(progress * 100.0f))); ;
+            }
+            else
+            {
+                return (output + text);
+            }
+        }
+
+        public List<string> ActivityStack = new List<string>();
+    }
+    public class SilentLog : ProgressLog
+    {
+        public override void AddString(string text, float progress = -1)
+        {
+        }
+    }
+    public class StandardConsoleLog : ProgressLog
+    {
+
+        public override void AddString(string text, float progress = -1)
+        {
+            Console.WriteLine(GetDefaultText(text, progress));
+
+        }
     }
 
 
@@ -39,19 +83,25 @@ namespace GerberLibrary
         GraphicsPath GP = new GraphicsPath();
         Bitmap MMGrid = null;
 
-        public List<string> AddGerberFolder(string path, bool add = true)
+        public List<string> AddGerberFolder(ProgressLog log, string path, bool add = true, bool skipoutlines = false)
         {
             if (File.Exists(path) && (Path.GetExtension(path).ToLower() == ".zip" || Path.GetExtension(path).ToLower() == "zip"))
             {
-                return AddGerberZip(path, add);
+                return AddGerberZip(log, path, add);
 
             }
 
             List<string> res = new List<string>();
             if (add) TheSet.LoadedOutlines.Add(path);
             string foldername = Path.GetDirectoryName(path + Path.DirectorySeparatorChar);
-            Console.WriteLine("adding folder {0}", foldername);
+            log.AddString(String.Format("adding folder {0}", foldername));
             bool had = false;
+
+            if (Directory.Exists(Path.Combine(path, "ultiboard")))
+            {
+                log.AddString(String.Format("found ultiboard folder {0}", foldername));
+
+            }
 
             string[] FileNames = Directory.GetFiles(foldername);
             List<string> outlinefiles = new List<string>();
@@ -62,7 +112,9 @@ namespace GerberLibrary
             {
                 BoardSide BS = BoardSide.Unknown;
                 BoardLayer BL = BoardLayer.Unknown;
-                if (Gerber.FindFileType(F) == BoardFileType.Gerber)
+
+                var FileTypeForFileName = Gerber.FindFileType(F);
+                if (FileTypeForFileName == BoardFileType.Gerber)
                 {
                     Gerber.DetermineBoardSideAndLayer(F, out BS, out BL);
                     if (BS == BoardSide.Both && BL == BoardLayer.Outline)
@@ -85,34 +137,37 @@ namespace GerberLibrary
                     }
                 }
             }
-            foreach (var a in outlinefiles)
+            if (skipoutlines == false)
             {
-                GerberOutlines[path] = new GerberOutline(a);
-                if (GerberOutlines[path].TheGerber.DisplayShapes.Count > 0) had = true;
-            }
-
-            if (had == false)
-            {
-                foreach (var a in millfiles)
+                foreach (var a in outlinefiles)
                 {
-                    GerberOutlines[path] = new GerberOutline(a);
+                    GerberOutlines[path] = new GerberOutline(log, a);
                     if (GerberOutlines[path].TheGerber.DisplayShapes.Count > 0) had = true;
                 }
 
-            }
-            if (had == false)
-            {
-                // TODO: extract an outline from other layers? THIS IS DANGEROUS!
-                Console.WriteLine("{0} has no outline available?", path);
-            }
-            else
-            {
-                res.Add(path);
+                if (had == false)
+                {
+                    foreach (var a in millfiles)
+                    {
+                        GerberOutlines[path] = new GerberOutline(log, a);
+                        if (GerberOutlines[path].TheGerber.DisplayShapes.Count > 0) had = true;
+                    }
+
+                }
+                if (had == false)
+                {
+                    // TODO: extract an outline from other layers? THIS IS DANGEROUS!
+                    log.AddString(String.Format("Warning: {0} has no outline available?", path));
+                }
+                else
+                {
+                    res.Add(path);
+                }
             }
             return res;
         }
 
-        private List<string> AddGerberZip(string path, bool add)
+        private List<string> AddGerberZip(ProgressLog log, string path, bool add)
         {
             List<string> res = new List<string>();
             Dictionary<string, MemoryStream> Files = new Dictionary<string, MemoryStream>();
@@ -132,7 +187,7 @@ namespace GerberLibrary
 
             if (add) TheSet.LoadedOutlines.Add(path);
             string foldername = Path.GetDirectoryName(path + Path.DirectorySeparatorChar);
-            Console.WriteLine("adding zip file {0}", foldername);
+            log.AddString(String.Format("adding zip file {0}", foldername));
             bool had = false;
 
             string[] FileNames = Files.Keys.ToArray();
@@ -171,7 +226,7 @@ namespace GerberLibrary
             foreach (var a in outlinefiles)
             {
                 Files[a].Seek(0, SeekOrigin.Begin);
-                GerberOutlines[path] = new GerberOutline(new StreamReader(Files[a]), a);
+                GerberOutlines[path] = new GerberOutline(log, new StreamReader(Files[a]), a);
                 if (GerberOutlines[path].TheGerber.DisplayShapes.Count > 0) had = true;
             }
 
@@ -180,7 +235,7 @@ namespace GerberLibrary
                 foreach (var a in millfiles)
                 {
                     Files[a].Seek(0, SeekOrigin.Begin);
-                    GerberOutlines[path] = new GerberOutline(new StreamReader(Files[a]), a);
+                    GerberOutlines[path] = new GerberOutline(log, new StreamReader(Files[a]), a);
                     if (GerberOutlines[path].TheGerber.DisplayShapes.Count > 0) had = true;
                 }
 
@@ -188,7 +243,7 @@ namespace GerberLibrary
             if (had == false)
             {
                 // TODO: extract an outline from other layers? THIS IS DANGEROUS!
-                Console.WriteLine("{0} has no outline available?", path);
+                log.AddString(String.Format("{0} has no outline available?", path));
             }
             else
             {
@@ -198,7 +253,7 @@ namespace GerberLibrary
 
         }
 
-        public void BuildAutoTabs(GerberArtWriter GAW = null, GerberArtWriter GAW2 = null)
+        public void BuildAutoTabs(ProgressLog log,  GerberArtWriter GAW = null, GerberArtWriter GAW2 = null)
         {
             if (TheSet.Instances.Count < 3) return;
             List<Vertex> Vertes = new List<Vertex>();
@@ -207,7 +262,7 @@ namespace GerberLibrary
 
             foreach (var a in TheSet.Instances)
             {
-                if (a.GerberPath.Contains("???") == false)
+                if (a.GerberPath.Contains("???_negative") == false)
                 {
                     var outline = GerberOutlines[a.GerberPath];
                     var P = outline.GetActualCenter();
@@ -219,7 +274,7 @@ namespace GerberLibrary
                     Vertes.Add(V);
                 }
             }
-            UpdateShape();
+            UpdateShape(log);
 
             var M = new TriangleNet.Meshing.GenericMesher();
             var R = M.Triangulate(Vertes);
@@ -229,7 +284,7 @@ namespace GerberLibrary
             {
                 var A = R.Vertices.ElementAt(a.P0);
                 var B = R.Vertices.ElementAt(a.P1);
-                PolyLine P = new PolyLine();
+                PolyLine P = new PolyLine(PolyLine.PolyIDs.AutoTabs);
                 P.Add(A.X, A.Y);
                 P.Add(B.X, B.Y);
                 GerberLibrary.GerberInstance iA = null;
@@ -277,7 +332,7 @@ namespace GerberLibrary
                             {
                                 double newD = PointD.Distance(acA, intersect[i]);
 
-                                PolyLine PL = new PolyLine();
+                                PolyLine PL = new PolyLine(PolyLine.PolyIDs.AutoTabs);
                                 var CP = intersect[i].Rotate(iA.Angle);
                                 CP.X += iA.Center.X;
                                 CP.Y += iA.Center.Y;
@@ -304,7 +359,7 @@ namespace GerberLibrary
                             for (int i = 0; i < intersect.Count; i++)
                             {
                                 double newD = PointD.Distance(acB, intersect[i]);
-                                PolyLine PL = new PolyLine();
+                                PolyLine PL = new PolyLine(PolyLine.PolyIDs.AutoTabs);
                                 var CP = intersect[i].Rotate(iB.Angle);
                                 CP.X += iB.Center.X;
                                 CP.Y += iB.Center.Y;
@@ -338,7 +393,7 @@ namespace GerberLibrary
                             var T = AddTab(CP);
                             T.Radius = (float)Math.Max(Distance / 1.5, 3.2f);
 
-                            PolyLine PL = new PolyLine();
+                            PolyLine PL = new PolyLine(PolyLine.PolyIDs.AutoTabs);
                             PL.MakeCircle(T.Radius);
                             PL.Translate(CP.X, CP.Y);
                             if (GAW2 != null) GAW2.AddPolygon(PL);
@@ -355,9 +410,9 @@ namespace GerberLibrary
             }
 
 
-            UpdateShape();
+            UpdateShape(log);
             RemoveAllTabs(true);
-            UpdateShape();
+            UpdateShape(log);
         }
 
         public Dictionary<string, GerberOutline> GerberOutlines = new Dictionary<string, GerberOutline>();
@@ -379,7 +434,7 @@ namespace GerberLibrary
                 foreach (var c in b.TransformedOutlines)
                 {
                     //       PolyLine PL = new PolyLine();
-                    //     PL.FillTransformed(c, new PointD(b.Center), b.Angle);
+                    //     PL.FillTransformed(c, b.Center, b.Angle);
                     clips.Add(c.toPolygon());
                 }
 
@@ -391,7 +446,7 @@ namespace GerberLibrary
             }
 
             Polygons BoardMinusCombinedInstanceOutline = new Polygons();
-            PolyLine Board = new PolyLine();
+            PolyLine Board = new PolyLine(PolyLine.PolyIDs.Outline);
             Board.Vertices.Add(new PointD(0, 0));
             Board.Vertices.Add(new PointD(TheSet.Width, 0));
             Board.Vertices.Add(new PointD(TheSet.Width, TheSet.Height));
@@ -424,7 +479,7 @@ namespace GerberLibrary
             //    PolyLine Circle = new PolyLine();
             //    Circle.MakeCircle(b.Radius);
             //    PolyLine PL = new PolyLine();
-            //    PL.FillTransformed(Circle, new PointD( b.Center), b.Angle);
+            //    PL.FillTransformed(Circle,  b.Center, b.Angle);
             //    clips.Add(PL.toPolygon());
 
             //    Clipper cp = new Clipper();
@@ -451,7 +506,7 @@ namespace GerberLibrary
 
             foreach (var s in expanded)
             {
-                PolyLine PL = new PolyLine();
+                PolyLine PL = new PolyLine(PolyLine.PolyIDs.Negative);
                 PL.fromPolygon(s);
                 Res.Add(PL);
             }
@@ -459,7 +514,7 @@ namespace GerberLibrary
 
         }
 
-        public void UpdateShape()
+        public void UpdateShape(ProgressLog log)
         {
             CombinedOutline.Clear();
 
@@ -469,7 +524,7 @@ namespace GerberLibrary
                 {
                     bool doit = false;
                     if (a.LastCenter == null) doit = true;
-                    if (doit || (PointD.Distance(new PointD(a.Center), a.LastCenter) != 0 || a.Angle != a.LastAngle))
+                    if (doit || (PointD.Distance(a.Center, a.LastCenter) != 0 || a.Angle != a.LastAngle))
                     {
                         a.RebuildTransformed(GerberOutlines[a.GerberPath], TheSet.ExtraTabDrillDistance);
                     }
@@ -482,7 +537,7 @@ namespace GerberLibrary
                 RemoveInstance("???_negative");
 
                 var Neg = GenerateNegativePolygon(TheSet.FillOffset, TheSet.Smoothing);
-                var G = new GerberOutline("");
+                var G = new GerberOutline(log, "");
                 G.TheGerber.Name = "???_negative";
                 G.TheGerber.OutlineShapes = Neg;
                 G.TheGerber.DisplayShapes = Neg;
@@ -495,7 +550,7 @@ namespace GerberLibrary
             {
                 aa.Tabs.Clear();
             }
-            FindOutlineIntersections();
+            FindOutlineIntersections(log);
 
         }
 
@@ -566,7 +621,7 @@ namespace GerberLibrary
                 BreakTab BT = b as BreakTab;
                 if (BT.Errors.Count > 0) errors = true;
                 DrawMarker(errors, G, new PointD(0, 0), 1, PW, errors ? ErrorP : P);
-                PolyLine Circle = new PolyLine();
+                PolyLine Circle = new PolyLine(PolyLine.PolyIDs.GFXTemp);
                 Circle.MakeCircle((b as BreakTab).Radius);
                 if (errors)
                 {
@@ -670,8 +725,8 @@ namespace GerberLibrary
                 G.Transform = T;
                 if (active)
                 {
-                    DrawMarker(false, G, new PointD(b.Center), 1, PW, ActivePD);
-                    DrawMarker(false, G, new PointD(b.Center), 1, PW, ActiveP);
+                    DrawMarker(false, G, b.Center, 1, PW, ActivePD);
+                    DrawMarker(false, G, b.Center, 1, PW, ActiveP);
 
                 }
 
@@ -776,7 +831,7 @@ namespace GerberLibrary
 
             foreach (var FinalPoly in FinalPolygonsWithTabs)
             {
-                PolyLine PL2 = new PolyLine();
+                PolyLine PL2 = new PolyLine(PolyLine.PolyIDs.Temp);
                 PL2.Vertices = FinalPoly.Vertices;
                 DrawShape(G, OO3, PL2);
                 //  DrawMarker(G, PL2.Vertices.First(), 1, PW);
@@ -785,7 +840,7 @@ namespace GerberLibrary
 
 
             //
-            PolyLine PL = new PolyLine();
+            PolyLine PL = new PolyLine(PolyLine.PolyIDs.Temp);
             PL.MakeSquare(0.15);
 
             foreach (var s in DrillHoles)
@@ -904,7 +959,7 @@ namespace GerberLibrary
             }
 
 
-            PointD center = new PointD(t.Center);
+            PointD center = t.Center;
             bool result = true;
             intersects = (from i in intersects orderby i.Angle select i).ToList();
             //intersects.Sort(x => x.Angle);
@@ -1073,11 +1128,11 @@ namespace GerberLibrary
                 //      Arc1.Add(A1.ToF());
                 //      Arc2.Add(A2.ToF());
 
-                PolyLine Middle = new PolyLine();
+                PolyLine Middle = new PolyLine(PolyLine.PolyIDs.AutoTabs);
                 Middle.Vertices.Add(A1);
                 Middle.Vertices.Add(A2);
 
-                PolyLine Combined = new PolyLine();
+                PolyLine Combined = new PolyLine(PolyLine.PolyIDs.AutoTabs);
                 //               GeneratedArcs.Add(PL);
                 //                GeneratedArcs.Add(PL2);
                 //             GeneratedArcs.Add(Middle);
@@ -1133,7 +1188,7 @@ namespace GerberLibrary
             RemoveAllTabs();
             foreach (var a in TheSet.Instances)
             {
-                if (GerberOutlines.ContainsKey(a.GerberPath) && a.GerberPath.Contains("???") == false)
+                if (GerberOutlines.ContainsKey(a.GerberPath) && a.GerberPath.Contains("???_negative") == false)
                 {
                     var g = GerberOutlines[a.GerberPath];
                     var TabsLocs = PolyLineSet.FindOptimalBreaktTabLocations(g.TheGerber);
@@ -1142,7 +1197,7 @@ namespace GerberLibrary
                     {
                         PointD loc = b.Item1 - (b.Item2 * TheSet.MarginBetweenBoards * 0.5);
                         loc = loc.Rotate(a.Angle);
-                        loc += new PointD(a.Center);
+                        loc += a.Center;
                         if (loc.X >= 0 && loc.X <= TheSet.Width && loc.Y >= 0 && loc.Y <= TheSet.Height)
                         {
                             var BT = AddTab(loc);
@@ -1201,7 +1256,7 @@ namespace GerberLibrary
                     foreach (var c in b.TransformedOutlines)
                     {
                         //  PolyLine PL = new PolyLine();
-                        //  PL.FillTransformed(c, new PointD(b.Center), b.Angle);
+                        //  PL.FillTransformed(c, b.Center, b.Angle);
                         SplitPolyLineAndAddSegs(c);
 
                     }
@@ -1214,7 +1269,7 @@ namespace GerberLibrary
             }
             foreach (var a in FinalSegs)
             {
-                PolyLine PL = new PolyLine();
+                PolyLine PL = new PolyLine(PolyLine.PolyIDs.Outline);
 
                 PL.Vertices.Add(a.PStart);
                 PL.Vertices.Add(a.PEnd);
@@ -1235,7 +1290,7 @@ namespace GerberLibrary
 
             foreach (var t in TheSet.Tabs.Where(x => x.Errors.Count == 0))
             {
-                PointD center = new PointD(t.Center);
+                PointD center = t.Center;
                 List<LineSeg> ToDelete = new List<LineSeg>();
                 List<LineSeg> ToAdd = new List<LineSeg>();
                 foreach (var s in Segs)
@@ -1292,7 +1347,7 @@ namespace GerberLibrary
             FinalSegs.AddRange(Segs);
         }
 
-        private void FindOutlineIntersections()
+        private void FindOutlineIntersections(ProgressLog log)
         {
             GeneratedArcs.Clear();
             DrillHoles.Clear();
@@ -1308,47 +1363,66 @@ namespace GerberLibrary
                     // Polygons clips = new Polygons();
                     // if (b.GerberPath.Contains("???") == false)
                     {
-                        var a = GerberOutlines[b.GerberPath];
-                        var C = new PointD(t.Center);
-                        C.X -= b.Center.X;
-                        C.Y -= b.Center.Y;
-                        C = C.Rotate(-b.Angle);
-                        var Box2 = a.TheGerber.BoundingBox.Grow(t.Radius * 2);
 
-                        if (Box2.Contains(C))
+
+                        GerberOutline a = null;
+
+                        if (GerberOutlines.ContainsKey(b.GerberPath))
                         {
-                            //Console.WriteLine("{0},{1}", a.TheGerber.BoundingBox, C);
-
-                            for (int i = 0; i < b.TransformedOutlines.Count; i++)
+                            a = GerberOutlines[b.GerberPath];
+                        }
+                        else
+                        {
+                            foreach (var k in GerberOutlines.Keys)
                             {
-                                var c = b.TransformedOutlines[i];
-
-                                //  var poly = c.toPolygon();
-                                // bool winding = Clipper.Orientation(poly);
-
-
-                                //  PolyLine PL = new PolyLine();
-                                // PL.FillTransformed(c, new PointD(b.Center), b.Angle);
-
-                                if (Helpers.IsInPolygon(c.Vertices, new PointD(t.Center), false))
+                                if (k.EndsWith(b.GerberPath))
                                 {
-                                    t.EvenOdd++;
-                                    // t.Errors.Add("inside a polygon!");
-                                    //  t.Valid = false;
+                                    a = GerberOutlines[k];
                                 }
+                            }
+                        }
+                        if (a != null)
+                        {
+                            var C = t.Center.Copy();
+                            C.X -= b.Center.X;
+                            C.Y -= b.Center.Y;
+                            C = C.Rotate(-b.Angle);
+                            var Box2 = a.TheGerber.BoundingBox.Grow(t.Radius * 2);
 
-                                BuildDrillsForTabAndPolyLine(t, c, b.OffsetOutlines[i]);
+                            if (Box2.Contains(C) || b.GerberPath.Contains("???_negative") == true)
+                            {
+                                //Console.WriteLine("{0},{1}", a.TheGerber.BoundingBox, C);
 
-                                //bool inside = false;
-                                //bool newinside = false;
-                                // List<PolyLine> Lines = new List<PolyLine>();
-
-                                //PolyLine Current = null;
-                                if (AddIntersectionsForTabAndPolyLine(t, Intersections, c))
+                                for (int i = 0; i < b.TransformedOutlines.Count; i++)
                                 {
-                                    b.Tabs.Add(t);
-                                }
+                                    var c = b.TransformedOutlines[i];
 
+                                    //  var poly = c.toPolygon();
+                                    // bool winding = Clipper.Orientation(poly);
+
+
+                                    //  PolyLine PL = new PolyLine();
+                                    // PL.FillTransformed(c, b.Center, b.Angle);
+
+                                    if (Helpers.IsInPolygon(c.Vertices, t.Center, false))
+                                    {
+                                        t.EvenOdd++;
+                                        // t.Errors.Add("inside a polygon!");
+                                        //  t.Valid = false;
+                                    }
+                                    if (TheSet.DoNotGenerateMouseBites == false) BuildDrillsForTabAndPolyLine(t, c, b.OffsetOutlines[i]);
+
+                                    //bool inside = false;
+                                    //bool newinside = false;
+                                    // List<PolyLine> Lines = new List<PolyLine>();
+
+                                    //PolyLine Current = null;
+                                    if (AddIntersectionsForTabAndPolyLine(t, Intersections, c))
+                                    {
+                                        b.Tabs.Add(t);
+                                    }
+
+                                }
                             }
                         }
                     }
@@ -1368,7 +1442,7 @@ namespace GerberLibrary
 
             }
             CutUpOutlines();
-            CombineGeneratedArcsAndCutlines();
+            CombineGeneratedArcsAndCutlines(log);
         }
 
         private static bool AddIntersectionsForTabAndPolyLine(BreakTab t, List<TabIntersection> Intersections, PolyLine PL)
@@ -1402,7 +1476,7 @@ namespace GerberLibrary
                         TI.Location = I1;
                         TI.Direction.X = (V1.X - V2.X) / Len;
                         TI.Direction.Y = (V1.Y - V2.Y) / Len;
-                        TI.Angle = Helpers.AngleBetween(new PointD(t.Center), I1);
+                        TI.Angle = Helpers.AngleBetween(t.Center, I1);
                         bool addedV1 = false;
 
                         bool V1Inside = Helpers.Distance(new PointD(t.Center.X, t.Center.Y), V1) < t.Radius;
@@ -1427,7 +1501,7 @@ namespace GerberLibrary
                         TabIntersection TI1 = new TabIntersection();
                         TI1.Start = true;
                         TI1.Location = I1;
-                        TI1.Angle = Helpers.AngleBetween(new PointD(t.Center), I1);
+                        TI1.Angle = Helpers.AngleBetween(t.Center, I1);
                         TI1.Direction.X = (V1.X - V2.X) / Len;
                         TI1.Direction.Y = (V1.Y - V2.Y) / Len;
                         Intersections.Add(TI1);
@@ -1437,7 +1511,7 @@ namespace GerberLibrary
                         TI2.Location = I2;
                         TI2.Direction.X = TI1.Direction.X;
                         TI2.Direction.Y = TI1.Direction.Y;
-                        TI2.Angle = Helpers.AngleBetween(new PointD(t.Center), I2);
+                        TI2.Angle = Helpers.AngleBetween(t.Center, I2);
                         Intersections.Add(TI2);
 
                     }
@@ -1507,7 +1581,7 @@ namespace GerberLibrary
 
         List<PathDefWithClosed> FinalPolygonsWithTabs = new List<PathDefWithClosed>();
 
-        private void CombineGeneratedArcsAndCutlines()
+        private void CombineGeneratedArcsAndCutlines(ProgressLog log)
         {
             List<PathDefWithClosed> SourceLines = new List<PathDefWithClosed>();
             foreach (var a in GeneratedArcs)
@@ -1521,14 +1595,14 @@ namespace GerberLibrary
                     SourceLines.Add(new PathDefWithClosed() { Vertices = l, Width = 0 });
                 }
             }
-            FinalPolygonsWithTabs = Helpers.LineSegmentsToPolygons(SourceLines, true);
+            FinalPolygonsWithTabs = Helpers.LineSegmentsToPolygons(log, SourceLines, true);
         }
 
         public List<string> SaveOutlineTo(string p, string combinedfilename)
         {
             List<string> R = new List<string>();
-            string DrillFile = Path.Combine(p, "tabdrills.TXT");
-            string OutlineFile = Path.Combine(p, combinedfilename + ".GKO");
+            string DrillFile = Path.Combine(p, combinedfilename + "_tabdrills.TXT");
+            string OutlineFile = Path.Combine(p, combinedfilename + "_blended_outline.GKO");
             R.Add(DrillFile);
             //  R.Add(OutlineFile);
             ExcellonFile EF = new ExcellonFile();
@@ -1540,9 +1614,10 @@ namespace GerberLibrary
             EF.Write(Path.Combine(p, DrillFile), 0, 0, 0, 0);
 
             GerberOutlineWriter GOW = new GerberOutlineWriter();
+            int id = 0;
             foreach (var a in FinalPolygonsWithTabs)
             {
-                PolyLine PL = new PolyLine();
+                PolyLine PL = new PolyLine(id++);
                 PL.Vertices = a.Vertices;
                 // todo: check if closed/opened things need special treatment here. 
                 // width is defaulted to 0
@@ -1562,7 +1637,7 @@ namespace GerberLibrary
             if (SaveOutline)
             {
                 GeneratedFiles.AddRange(SaveOutlineTo(targetfolder, combinedfilename));
-                FinalFiles.Add(Path.Combine(targetfolder, combinedfilename + ".gko"));
+                FinalFiles.Add(Path.Combine(targetfolder, combinedfilename + "_blended_outline.gko"));
             }
 
             // TODO: use the new Gerber.DetermineFile to actually group based on layer/type instead of extentions only!
@@ -1573,6 +1648,19 @@ namespace GerberLibrary
             {
                 string ext = Path.GetExtension(s).ToLower(); ;
                 if (ext == "xln") ext = "txt";
+                if (ext == "drl") ext = "txt";
+
+                if (TheSet.MergeFileTypes)
+                {
+                    BoardLayer layer;
+                    BoardSide Side;
+
+                    Gerber.DetermineBoardSideAndLayer(s, out Side, out layer);
+
+                    ext = String.Format(".{0}_{1}", layer, Side);
+                }
+
+
                 if (FilesPerExt.ContainsKey(ext) == false)
                 {
                     FilesPerExt[ext] = new List<string>();
@@ -1582,16 +1670,23 @@ namespace GerberLibrary
                 FilesPerExt[ext].Add(s);
             }
             int count = 0;
-            foreach (var a in FilesPerExt)
+            object finallock = new object();
+            Parallel.ForEach(FilesPerExt, (a) =>
             {
-                count++;
-                Logger.AddString("merging *" + a.Key.ToLower(), ((float)count / (float)FilesPerExt.Keys.Count) * 0.5f + 0.3f);
+                lock (finallock)
+                {
+                    count++;
+                    Logger.AddString("merging *" + a.Key.ToLower(), ((float)count / (float)FilesPerExt.Keys.Count) * 0.5f + 0.3f);
+                }
                 switch (FileTypePerExt[a.Key])
                 {
                     case BoardFileType.Drill:
                         {
                             string Filename = Path.Combine(targetfolder, combinedfilename + a.Key);
-                            FinalFiles.Add(Filename);
+                            lock (finallock)
+                            {
+                                FinalFiles.Add(Filename);
+                            }
                             ExcellonFile.MergeAll(a.Value, Filename, Logger);
                         }
                         break;
@@ -1600,13 +1695,16 @@ namespace GerberLibrary
                             if (a.Key.ToLower() != ".gko")
                             {
                                 string Filename = Path.Combine(targetfolder, combinedfilename + a.Key);
-                                FinalFiles.Add(Filename);
+                                lock (finallock)
+                                {
+                                    FinalFiles.Add(Filename);
+                                }
                                 GerberMerger.MergeAll(a.Value, Filename, Logger);
                             }
                         }
                         break;
                 }
-            }
+            });
 
             //Logger.AddString("Writing source material zipfile", 0.80f);
             //string SeparateZipFile = Path.Combine(targetfolder, BaseName + ".separate_boards.zip");
@@ -1645,9 +1743,8 @@ namespace GerberLibrary
                 {
                     Logger.AddString("Writing board bitmaps", 0.95f);
                     GerberImageCreator GIC = new GerberImageCreator();
-                    GIC.AddBoardsToSet(FinalFiles);
-
-                    GIC.WriteImageFiles(Path.Combine(targetfolder, BaseName), 400, Gerber.DirectlyShowGeneratedBoardImages, Logger);
+                    GIC.AddBoardsToSet(FinalFiles, new SilentLog());
+                    GIC.WriteImageFiles(Path.Combine(targetfolder, BaseName), 200, Gerber.DirectlyShowGeneratedBoardImages, false, true, Logger);
                 }
                 catch (Exception E)
                 {
@@ -1701,7 +1798,7 @@ namespace GerberLibrary
 
         public GerberInstance AddInstance(string path, PointD coord, bool generateTransformed = false)
         {
-            GerberInstance GI = new GerberInstance() { GerberPath = path, Center = coord.ToF() };
+            GerberInstance GI = new GerberInstance() { GerberPath = path, Center = coord };
             TheSet.Instances.Add(GI);
             if (generateTransformed)
             {
@@ -1710,8 +1807,8 @@ namespace GerberLibrary
                     var GO = GerberOutlines[path];
                     foreach (var b in GO.TheGerber.OutlineShapes)
                     {
-                        PolyLine PL = new PolyLine();
-                        PL.FillTransformed(b, new PointD(GI.Center), GI.Angle);
+                        PolyLine PL = new PolyLine(PolyLine.PolyIDs.Outline);
+                        PL.FillTransformed(b, GI.Center, GI.Angle);
                         GI.TransformedOutlines.Add(PL);
 
                     }
@@ -1721,7 +1818,7 @@ namespace GerberLibrary
             return GI;
         }
 
-        public void LoadFile(string filename)
+        public void LoadFile(ProgressLog log, string filename)
         {
             XmlSerializer SerializerObj = new XmlSerializer(typeof(GerberLayoutSet));
             FileStream ReadFileStream = null;
@@ -1735,7 +1832,7 @@ namespace GerberLibrary
                 {
                     foreach (var a in newset.LoadedOutlines)
                     {
-                        AddGerberFolder(a, false);
+                        AddGerberFolder(log, a, false);
                     }
                     TheSet = newset;
                 }
@@ -1751,7 +1848,7 @@ namespace GerberLibrary
         {
             foreach (var b in TheSet.Tabs)
             {
-                if (Helpers.Distance(new PointD(b.Center), pt) <= b.Radius)
+                if (Helpers.Distance(b.Center, pt) <= b.Radius)
                 {
                     return b;
                 }
@@ -1811,7 +1908,7 @@ namespace GerberLibrary
                     {
                         a.Item1.Angle = 0;
 
-                        a.Item1.Center = (Coord - OL.TheGerber.BoundingBox.TopLeft).ToF();
+                        a.Item1.Center = (Coord - OL.TheGerber.BoundingBox.TopLeft);
                         // a.Item1.Center.X += 1;
                         // a.Item1.Center.Y += 1;
                     }
@@ -1823,7 +1920,7 @@ namespace GerberLibrary
                         if (Coord != null)
                         {
                             a.Item1.Angle = 90;
-                            a.Item1.Center = (Coord - OL.TheGerber.BoundingBox.TopLeft).ToF();
+                            a.Item1.Center = (Coord - OL.TheGerber.BoundingBox.TopLeft);
                             a.Item1.Center.Y += (float)RD.Width;
 
                             // a.Item1.Center.X += 1;
@@ -1888,7 +1985,7 @@ namespace GerberLibrary
 
                         if (R.height == (int)(RD.height + TheSet.MarginBetweenBoards))
                         {
-                            a.Item1.Center = (new PointD(R.x, R.y) - OL.TheGerber.BoundingBox.TopLeft).ToF();
+                            a.Item1.Center = (new PointD(R.x, R.y) - OL.TheGerber.BoundingBox.TopLeft);
 
                             a.Item1.Angle = 0;
                             // regular
@@ -1896,7 +1993,7 @@ namespace GerberLibrary
                         else
                         {
 
-                            a.Item1.Center = (new PointD(R.x, R.y)).ToF();// - OL.TheGerber.TopLeft).ToF();
+                            a.Item1.Center = (new PointD(R.x, R.y));// - OL.TheGerber.TopLeft).ToF();
 
                             a.Item1.Center.X += (float)OL.TheGerber.BoundingBox.TopLeft.Y;
                             a.Item1.Center.Y -= (float)OL.TheGerber.BoundingBox.TopLeft.X;
@@ -1925,7 +2022,7 @@ namespace GerberLibrary
         public BreakTab AddTab(PointD center)
         {
 
-            BreakTab BT = new BreakTab() { Radius = 3, Center = center.ToF() };
+            BreakTab BT = new BreakTab() { Radius = 3, Center = center };
             TheSet.Tabs.Add(BT);
 
             return BT;
@@ -1943,17 +2040,17 @@ namespace GerberLibrary
             }
             for (int i = 0; i < TheSet.Tabs.Count; i++)
             {
-                PointD A = new PointD(TheSet.Tabs[i].Center);
+                PointD A = TheSet.Tabs[i].Center;
 
                 for (int j = i + 1; j < TheSet.Tabs.Count; j++)
                 {
                     if (Tabs[j] == false)
                     {
-                        PointD B = new PointD(TheSet.Tabs[j].Center);
+                        PointD B = TheSet.Tabs[j].Center;
                         if (PointD.Distance(A, B) < (TheSet.Tabs[j].Radius + TheSet.Tabs[i].Radius) * 0.75)
                         {
                             Tabs[j] = true;
-                            TheSet.Tabs[i].Center = ((A + B) * 0.5).ToF();
+                            TheSet.Tabs[i].Center = ((A + B) * 0.5);
                             Removethese.Add(TheSet.Tabs[j]);
                         }
                     }
@@ -1970,8 +2067,11 @@ namespace GerberLibrary
 
     public class AngledThing
     {
-        public PointF Center = new PointF(); // float for serializer... need to investigate
+        public PointD Center = new PointD(); // float for serializer... need to investigate
         public float Angle;
+
+
+
     }
 
     public class GerberInstance : AngledThing
@@ -1994,7 +2094,7 @@ namespace GerberLibrary
         public List<BreakTab> Tabs = new List<BreakTab>();
 
         [System.Xml.Serialization.XmlIgnore]
-        public PolyLineSet.Bounds BoundingBox = new PolyLineSet.Bounds();
+        public Bounds BoundingBox = new Bounds();
         internal void CreateOffsetLines(double extradrilldistance)
         {
             OffsetOutlines = new List<List<PolyLine>>(TransformedOutlines.Count);
@@ -2011,7 +2111,7 @@ namespace GerberLibrary
                 Polygons clips2 = Clipper.OffsetPolygons(clips, offset, JoinType.jtRound);
                 foreach (var a in clips2)
                 {
-                    PolyLine P = new PolyLine();
+                    PolyLine P = new PolyLine(PolyLine.PolyIDs.OffsetLine);
                     P.fromPolygon(a);
                     L.Add(P);
                 }
@@ -2028,10 +2128,12 @@ namespace GerberLibrary
             LastCenter = new PointD(Center.X, Center.Y);
             TransformedOutlines = new List<PolyLine>();
             var GO = gerberOutline;
+
+
             foreach (var b in GO.TheGerber.OutlineShapes)
             {
-                PolyLine PL = new PolyLine();
-                PL.FillTransformed(b, new PointD(Center), Angle);
+                PolyLine PL = new PolyLine(-2);
+                PL.FillTransformed(b, Center, Angle);
                 TransformedOutlines.Add(PL);
                 BoundingBox.AddPolyLine(PL);
             }
@@ -2071,64 +2173,101 @@ namespace GerberLibrary
         public bool ClipToOutlines = true;
         public string LastExportFolder = "";
 
-        public List<string> SaveTo(string p, Dictionary<string, GerberOutline> GerberOutlines, ProgressLog Logger)
+        public bool DoNotGenerateMouseBites = false;
+        public bool MergeFileTypes = false;
+
+        public GerberOutline GetOutline(Dictionary<string, GerberOutline> GerberOutlines, string gerberPath)
         {
-            LastExportFolder = p;
+            if (GerberOutlines.ContainsKey(gerberPath))
+            {
+                return GerberOutlines[gerberPath];
+            }
+            else
+            {
+                foreach (var k in GerberOutlines.Keys)
+                {
+                    if (k.EndsWith(gerberPath))
+                    {
+                        return GerberOutlines[k];
+                    }
+                }
+            }
+            return null;
+        }
+
+
+        public List<string> SaveTo(string OutputFolder, Dictionary<string, GerberOutline> GerberOutlines, ProgressLog Logger)
+        {
+            LastExportFolder = OutputFolder;
 
             List<string> GeneratedFiles = new List<string>();
             List<String> UnzippedList = new List<string>();
 
             int instanceID = 1;
             int current = 0;
+            BOM MasterBom = new BOM();
+            BOMNumberSet set = new BOMNumberSet();
+
             foreach (var a in Instances)
             {
                 current++;
-                Logger.AddString("writing " + a.GerberPath, ((float)current / (float)Instances.Count) * 0.3f);
-                if (a.GerberPath.Contains("???") == false)
+                BOM InstanceBom = BOM.ScanFolderForBoms(a.GerberPath);
+                if (InstanceBom != null && InstanceBom.GetPartCount() > 0)
                 {
-                    var outline = GerberOutlines[a.GerberPath];
-                    List<String> FileList = new List<string>();
+                    MasterBom.MergeBOM(InstanceBom, set, a.Center.X, a.Center.Y, 0, 0, a.Angle);
+                }
 
-                    if (Directory.Exists(a.GerberPath))
+
+                Logger.AddString("writing " + a.GerberPath, ((float)current / (float)Instances.Count) * 0.3f);
+                if (a.GerberPath.Contains("???_negative") == false)
+                {
+
+                    var outline = GetOutline(GerberOutlines, a.GerberPath);
+                    if (outline != null)
                     {
-                        FileList = Directory.GetFiles(a.GerberPath).ToList();
-                    }
-                    else
-                    {
-                        if (File.Exists(a.GerberPath) && (Path.GetExtension(a.GerberPath).ToLower() == ".zip" || Path.GetExtension(a.GerberPath).ToLower() == "zip"))
+                        List<String> FileList = new List<string>();
+
+                        if (Directory.Exists(a.GerberPath))
                         {
-                            string BaseUnzip = Path.Combine(p, "unzipped");
-                            if (Directory.Exists(BaseUnzip) == false)
+                            FileList = Directory.GetFiles(a.GerberPath).ToList();
+                        }
+                        else
+                        {
+                            if (File.Exists(a.GerberPath) && (Path.GetExtension(a.GerberPath).ToLower() == ".zip" || Path.GetExtension(a.GerberPath).ToLower() == "zip"))
                             {
-                                Directory.CreateDirectory(BaseUnzip);
-                            }
-                            using (Ionic.Zip.ZipFile zip1 = Ionic.Zip.ZipFile.Read(a.GerberPath))
-                            {
-                                foreach (ZipEntry e in zip1)
+                                string BaseUnzip = Path.Combine(OutputFolder, "unzipped");
+                                if (Directory.Exists(BaseUnzip) == false)
                                 {
-                                    if (e.IsDirectory == false)
+                                    Directory.CreateDirectory(BaseUnzip);
+                                }
+                                using (Ionic.Zip.ZipFile zip1 = Ionic.Zip.ZipFile.Read(a.GerberPath))
+                                {
+                                    foreach (ZipEntry e in zip1)
                                     {
-                                        string Unzipped = Path.Combine(BaseUnzip, (instanceID++).ToString() + "_" + Path.GetFileName(e.FileName));
-                                        if (File.Exists(Unzipped)) File.Delete(Unzipped);
-                                        FileStream FS = new FileStream(Unzipped, FileMode.CreateNew);
-                                        FileList.Add(Unzipped);
-                                        UnzippedList.Add(Unzipped);
-                                        e.Extract(FS);
-                                        FS.Close();
+                                        if (e.IsDirectory == false)
+                                        {
+                                            string Unzipped = Path.Combine(BaseUnzip, (instanceID++).ToString() + "_" + Path.GetFileName(e.FileName));
+                                            if (File.Exists(Unzipped)) File.Delete(Unzipped);
+                                            FileStream FS = new FileStream(Unzipped, FileMode.CreateNew);
+                                            FileList.Add(Unzipped);
+                                            UnzippedList.Add(Unzipped);
+                                            e.Extract(FS);
+                                            FS.Close();
 
 
 
 
+                                        }
                                     }
                                 }
                             }
                         }
+
+                        instanceID = AddFilesForInstance(OutputFolder, a.Center.X, a.Center.Y, a.Angle, FileList, instanceID, GeneratedFiles, outline, Logger);
+
+
+                        instanceID++;
                     }
-
-                    instanceID = AddFilesForInstance(p,a.Center.X, a.Center.Y, a.Angle, FileList, instanceID, GeneratedFiles, outline, Logger);
-
-
-                    instanceID++;
                 }
             }
             foreach (var a in UnzippedList)
@@ -2142,14 +2281,27 @@ namespace GerberLibrary
                     Logger.AddString(String.Format("warning: {0} not deleted: it was locked?", a));
                 }
             }
+
+            if (MasterBom.GetPartCount() > 0)
+            {
+                string BomFile = Path.Combine(OutputFolder, "MergedBom.csv");
+                string CentroidFile = Path.Combine(OutputFolder, "MergedCentroids.csv");
+
+                MasterBom.SaveBom(BomFile);
+                MasterBom.SaveCentroids(CentroidFile);
+
+                //                GeneratedFiles.Add(CentroidFile);
+                //              GeneratedFiles.Add(BomFile);
+            }
             return GeneratedFiles;
         }
+
 
         private int AddFilesForInstance(string p, double x, double y, double angle, List<string> FileList, int isntid, List<string> GeneratedFiles, GerberOutline outline, ProgressLog Logger)
         {
 
             GerberImageCreator GIC = new GerberImageCreator();
-            GIC.AddBoardsToSet(FileList);
+            GIC.AddBoardsToSet(FileList, new SilentLog());
 
 
 
@@ -2165,9 +2317,9 @@ namespace GerberLibrary
                         {
                             double scaler = GIC.GetDrillScaler(f);
                             ExcellonFile EF = new ExcellonFile();
-                            EF.Load(f, scaler);
+                            EF.Load(Logger, f, scaler);
                             string Filename = Path.Combine(p, (isntid++).ToString() + "_" + Path.GetFileName(f));
-                            EF.Write(Filename, x,y, outline.TheGerber.TranslationSinceLoad.X, outline.TheGerber.TranslationSinceLoad.Y, angle);
+                            EF.Write(Filename, x, y, outline.TheGerber.TranslationSinceLoad.X, outline.TheGerber.TranslationSinceLoad.Y, angle);
                             GeneratedFiles.Add(Filename);
                         }
                         catch (Exception E)
@@ -2196,12 +2348,12 @@ namespace GerberLibrary
                                 {
                                     tempfile = Path.Combine(p, (isntid++).ToString() + "_" + Path.GetFileName(f));
                                     GerberImageCreator GIC2 = new GerberImageCreator();
-                                    GIC2.AddBoardsToSet(FileList);
-                                    GIC2.ClipBoard(f, tempfile,Logger);
+                                    GIC2.AddBoardsToSet(FileList, new SilentLog());
+                                    GIC2.ClipBoard(f, tempfile, Logger);
                                     sourcefile = tempfile;
                                 }
                             }
-                            GerberTransposer.Transform(sourcefile, Filename, x, y, outline.TheGerber.TranslationSinceLoad.X, outline.TheGerber.TranslationSinceLoad.Y, angle);
+                            GerberTransposer.Transform(Logger, sourcefile, Filename, x, y, outline.TheGerber.TranslationSinceLoad.X, outline.TheGerber.TranslationSinceLoad.Y, angle);
                             GeneratedFiles.Add(Filename);
                             if (tempfile.Length > 0) File.Delete(tempfile);
                         }
@@ -2237,11 +2389,12 @@ namespace GerberLibrary
     {
 
         public ParsedGerber TheGerber;
-        public GerberOutline(string filename)
+
+        public GerberOutline(ProgressLog log, string filename)
         {
             if (filename.Length > 0)
             {
-                TheGerber = PolyLineSet.LoadGerberFile(filename, true, false, new GerberParserState() { PreCombinePolygons = false });
+                TheGerber = PolyLineSet.LoadGerberFile(log, filename, true, false, new GerberParserState() { PreCombinePolygons = false });
                 TheGerber.FixPolygonWindings();
                 foreach (var a in TheGerber.OutlineShapes)
                 {
@@ -2254,10 +2407,10 @@ namespace GerberLibrary
             }
         }
 
-        public GerberOutline(StreamReader sr, string originalfilename)
+        public GerberOutline(ProgressLog log, StreamReader sr, string originalfilename)
         {
 
-            TheGerber = PolyLineSet.LoadGerberFileFromStream(sr, originalfilename, true, false, new GerberParserState() { PreCombinePolygons = false });
+            TheGerber = PolyLineSet.LoadGerberFileFromStream(log, sr, originalfilename, true, false, new GerberParserState() { PreCombinePolygons = false });
             TheGerber.FixPolygonWindings();
             foreach (var a in TheGerber.OutlineShapes)
             {

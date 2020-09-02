@@ -98,14 +98,14 @@ namespace GerberLibrary.Core
         public void DefaultShape()
         {
             Shapes.Clear();
-            PolyLine S1 = new PolyLine();
+            PolyLine S1 = new PolyLine(State.LastShapeID++);
             S1.Add(0, 10);
             S1.Add(20, 10);
             S1.Add(20, 20);
             S1.Add(0, 20);
             S1.Add(0, 10);
             Shapes.Add(S1);
-            PolyLine S2 = new PolyLine();
+            PolyLine S2 = new PolyLine(State.LastShapeID++);
 
             for (int i = 0; i < 101; i++)
             {
@@ -120,6 +120,7 @@ namespace GerberLibrary.Core
         public List<PolyLine> Shapes = new List<PolyLine>();
         public List<PolyLine> DisplayShapes = new List<PolyLine>();
         public List<PolyLine> OutlineShapes = new List<PolyLine>();
+        public List<PointD> ZerosizePoints = new List<PointD>();
 
         public Bounds BoundingBox = new Bounds();
         public BoardSide Side;
@@ -142,6 +143,7 @@ namespace GerberLibrary.Core
             BoundingBox.AddPolyLines(Shapes);
             BoundingBox.AddPolyLines(DisplayShapes);
             BoundingBox.AddPolyLines(OutlineShapes);
+            BoundingBox.FitPoint(ZerosizePoints);
         }
 
         public void FixPolygonWindings()
@@ -182,7 +184,10 @@ namespace GerberLibrary.Core
 
             for (int i = 0; i < solution2.Count; i++)
             {
-                PolyLine PL = new PolyLine(); PL.fromPolygon(solution2[i]);
+                int ID = i;
+                if (State != null) ID = State.LastShapeID++;
+                PolyLine PL = new PolyLine(ID);
+                PL.fromPolygon(solution2[i]);
 
                 // if (Clipper.Orientation(solution2[i]) == false)
                 // {
@@ -198,7 +203,7 @@ namespace GerberLibrary.Core
 
         internal PolyLine GetBoundingPolyLine()
         {
-            PolyLine Boundary = new PolyLine();
+            PolyLine Boundary = new PolyLine(State.LastShapeID++);
 
             Boundary.Add(BoundingBox.TopLeft.X, BoundingBox.TopLeft.Y);
             Boundary.Add(BoundingBox.BottomRight.X, BoundingBox.TopLeft.Y);
@@ -209,8 +214,25 @@ namespace GerberLibrary.Core
             return Boundary;
         }
 
-        public void Normalize()
+        public void Translate(PointD T)
         {
+            TranslationSinceLoad.X += T.X;
+            TranslationSinceLoad.Y += T.Y;
+
+            foreach (var a in DisplayShapes)
+            {
+                a.Translate(T.X, T.Y);
+            }
+
+            foreach (var a in OutlineShapes)
+            {
+                a.Translate(T.X, T.Y);
+            }
+        }
+        public PointD Normalize()
+        {
+
+            PointD t = new PointD(-BoundingBox.TopLeft.X, -BoundingBox.TopLeft.Y);
             // return;
             TranslationSinceLoad.X -= BoundingBox.TopLeft.X;
             TranslationSinceLoad.Y -= BoundingBox.TopLeft.Y;
@@ -224,7 +246,7 @@ namespace GerberLibrary.Core
             {
                 a.MoveBack(BoundingBox.TopLeft);
             }
-
+            return t;
         }
 
         public void BuildBoundary()

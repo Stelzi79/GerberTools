@@ -28,10 +28,11 @@ namespace GerberCombinerBuilder
             smoothoffsetbox.Value= (decimal)ParentPanel.TheSet.Smoothing;
             ExtraTabDrillDistance.Value = (decimal)ParentPanel.TheSet.ExtraTabDrillDistance;
             FillEmpty.Checked = ParentPanel.TheSet.ConstructNegativePolygon;
-
+            noMouseBites.Checked = ParentPanel.TheSet.DoNotGenerateMouseBites;
+            mergebyfiletypebox.Checked = ParentPanel.TheSet.MergeFileTypes;
         }
 
-        private void button1_Click(object sender, EventArgs e)
+        private void OkButton(object sender, EventArgs e)
         {
             ParentPanel.TheSet.Width = (double)WidthBox.Value;
             ParentPanel.TheSet.Height = (double)HeightBox.Value;
@@ -40,16 +41,26 @@ namespace GerberCombinerBuilder
             ParentPanel.TheSet.ExtraTabDrillDistance = (double) ExtraTabDrillDistance.Value;
             ParentPanel.TheSet.FillOffset = (double)filloffsetbox.Value;
             ParentPanel.TheSet.Smoothing = (double)smoothoffsetbox.Value;
-
+            ParentPanel.TheSet.DoNotGenerateMouseBites = noMouseBites.Checked;
             ParentPanel.TheSet.ClipToOutlines = ClipToOutlines.Checked;
+            ParentPanel.TheSet.MergeFileTypes = mergebyfiletypebox.Checked;
             Close();
         }
 
-        private void button2_Click(object sender, EventArgs e)
+        private void CancelButtonPress(object sender, EventArgs e)
         {
             // cancel
             Close();
         }
 
+        private void checkBox1_CheckedChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void CheckBox1_CheckedChanged_1(object sender, EventArgs e)
+        {
+
+        }
     }
 }

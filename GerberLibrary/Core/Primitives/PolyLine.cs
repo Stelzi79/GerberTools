@@ -13,15 +13,42 @@ namespace GerberLibrary.Core.Primitives
 {
     public class PolyLine
     {
-        public PolyLine()
-        {
+        public enum PolyIDs{
+            Outline = -20,
+            Bitmap = -30,
+            No = -2,
+            Gallifrey = -50,
+            ArtWork = -42,
+            AutoTabs = -60,
+            Negative = -70,
+            Aperture = -900,
+            ApertureConstr = -902,
+            Temp = -1000,
+            GFXTemp = -1001,
+            OffsetLine = -21,
         }
+
+        public int ID = -1;
+
+        public PolyLine() : this(PolyIDs.Temp) { }
+
+        public PolyLine(PolyIDs nID )
+        {
+            ID = (int)nID;
+        }
+
+        public PolyLine(int nID)
+        {
+            ID = nID;
+        }
+        
+        
         public List<PointD> Vertices = new List<PointD>();
 
 
         public PolyLine Copy()
         {
-            PolyLine PL = new PolyLine();
+            PolyLine PL = new PolyLine(ID);
             foreach (var a in Vertices)
             {
                 PL.Add(a.X, a.Y);
@@ -67,6 +94,22 @@ namespace GerberLibrary.Core.Primitives
             {
                 Hole = true;
             }
+        }
+
+        internal bool ClockWise()
+        {
+
+
+            bool isClockwise = false;
+            double sum = 0;
+            for (int i = 0; i < Vertices.Count ; i++)
+            {
+                sum += (Vertices[(i + 1)%Vertices.Count].X - Vertices[i].X) * (Vertices[(i + 1) % Vertices.Count].Y + Vertices[i].Y);
+            }
+            isClockwise = (sum > 0) ? true : false;
+            return isClockwise;
+            
+
         }
 
         public bool Draw = true;
@@ -171,24 +214,34 @@ namespace GerberLibrary.Core.Primitives
             Vertices.Add(new PointD(-p, -p));
         }
 
-        public void MakeCircle(double p, int C = 20)
+        public void MakeCircle(double radius, int C = 20, double ox = 0, double oy=0)
         {
             Vertices.Clear();
             for (int i = 0; i < C + 1; i++)
             {
                 double P = ((double)i / (double)(C)) * (double)Math.PI * 2;
-                Vertices.Add(new PointD(Math.Sin(P) * p, Math.Cos(P) * p));
+                Vertices.Add(new PointD(Math.Sin(P) * radius + ox, Math.Cos(P) * radius +oy));
             }
         }
 
-        internal void MakeRectangle(double w, double h)
+        internal void MakeRectangle(double w, double h, double ox =0 , double oy =0 )
         {
             Vertices.Clear();
-            Vertices.Add(new PointD(-w / 2, -h / 2));
-            Vertices.Add(new PointD(w / 2, -h / 2));
-            Vertices.Add(new PointD(w / 2, h / 2));
-            Vertices.Add(new PointD(-w / 2, h / 2));
-            Vertices.Add(new PointD(-w / 2, -h / 2));
+            Vertices.Add(new PointD(ox + -w / 2, oy + -h / 2));
+            Vertices.Add(new PointD(ox + w / 2, oy + -h / 2));
+            Vertices.Add(new PointD(ox + w / 2, oy + h / 2));
+            Vertices.Add(new PointD(ox + -w / 2, oy + h / 2));
+            Vertices.Add(new PointD(ox + -w / 2, oy + -h / 2));
+        }
+
+        internal void MakePRectangle(double w, double h, double ox = 0, double oy = 0)
+        {
+            Vertices.Clear();
+            Vertices.Add(new PointD(ox + 0,oy + 0));
+            Vertices.Add(new PointD(ox +w , oy + 0));
+            Vertices.Add(new PointD(ox +w , oy + h));
+            Vertices.Add(new PointD(ox +0, oy + h));
+            Vertices.Add(new PointD(ox +0, oy + 0));
         }
 
 
@@ -215,6 +268,21 @@ namespace GerberLibrary.Core.Primitives
                 a.Y += Yoff;
             }
         }
+        public Bounds GetBounds()
+        {
+            Bounds B = new Bounds();
+            foreach(var v in Vertices)
+            {
+                B.FitPoint(v);
+            }
+            return B;
+        }
+
+
+        public bool ContainsPoint(double x, double y)
+        {
+            return Helpers.IsInPolygon(Vertices, new PointD(x, y));
+        }
 
         public PointD GetCentroid()
         {
@@ -237,6 +305,25 @@ namespace GerberLibrary.Core.Primitives
             return new PointD(centerX / accumulatedArea, centerY / accumulatedArea);
         }
 
+        public PointD GetMidPoint()
+        {
+            double centerX = 0.0f;
+            double centerY = 0.0f;
+
+            for (int i = 0; i < Vertices.Count; i++)
+            {
+                centerX += (Vertices[i].X);
+                centerY += (Vertices[i].Y);
+            }
+
+            if(Vertices.Count== 0)
+            {
+                return new PointD(0, 0);
+            }
+            
+            return new PointD(centerX / (float)Vertices.Count, centerY / (float)Vertices.Count);
+        }
+
         public List<PointD> GetIntersections(PointD diffA, PointD cA)
         {
             List<PointD> res = new List<PointD>();
@@ -250,6 +337,18 @@ namespace GerberLibrary.Core.Primitives
 
 
             return res;
+        }
+
+        public static List<PolyLine> StrokeBox(PointD topLeft, PointD bottomRight, double v)
+        {
+            List<PolyLine> R = new List<PolyLine>();
+
+            R.Add(Stroke(topLeft.X, topLeft.Y, topLeft.X, bottomRight.Y, v));
+            R.Add(Stroke(bottomRight.X, topLeft.Y, bottomRight.X, bottomRight.Y, v));
+
+            R.Add(Stroke(topLeft.X, topLeft.Y, bottomRight.X, topLeft.Y, v));
+            R.Add(Stroke(topLeft.X, bottomRight.Y, bottomRight.X, bottomRight.Y, v));
+            return R;
         }
 
         internal void SetObround(double W, double H)
@@ -299,6 +398,18 @@ namespace GerberLibrary.Core.Primitives
                 Add(x, y);
             }
             Close();
+        }
+
+        public bool EntirelyInside(PolyLine b)
+        {
+            foreach(var v in Vertices)
+            {
+                if (b.PointInPoly(v) == false)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         public PointF[] ToPointsArray()
@@ -382,6 +493,158 @@ namespace GerberLibrary.Core.Primitives
             }
             return L;
         }
+
+
+        public bool PointInPoly(PointD pnt)
+        {
+            int i, j;
+            int nvert = Vertices.Count;
+            bool c = false;
+            for (i = 0, j = nvert - 1; i < nvert; j = i++)
+            {
+                if (((Vertices[i].Y > pnt.Y) != (Vertices[j].Y > pnt.Y)) &&
+                 (pnt.X < (Vertices[j].X - Vertices[i].X) * (pnt.Y - Vertices[i].Y) / (Vertices[j].Y - Vertices[i].Y) + Vertices[i].X))
+                    c = !c;
+            }
+            return c;
+        }
+
+        public static PolyLine Stroke(double x1, double y1, double x2, double y2, double w)
+        {
+            PolyLine PL = new PolyLine( PolyIDs.GFXTemp);
+            PointD A = new PointD(x1, y1);
+            PointD B = new PointD(x2, y2);
+            var C = B - A;
+
+            PL.MakeRectangle(w,C.Length() + w);
+            PL.Translate(0, C.Length()/2 );
+            PL.RotateDegrees(Math.Atan2(C.Y, C.X)*360/(Math.PI*2)  - 90);
+            PL.Translate(x1, y1);                
+            
+            return PL;
+        }
+
+
+        public static List<PolyLine> MiniFontShapes(string v1, double _x, double _y, double size, double rotation = 0)
+        {
+            List<PolyLine> Res = new List<PolyLine>();
+            double wunit = size * 0.55f;
+            double hunit = -size;
+            double stroke = size * 0.15;
+            double w = 0;
+            double x = 0;
+            double y = 0;
+            y -= hunit / 2;
+
+            for (int i = 0; i < v1.Length; i++)
+            {
+                var c = v1[i];
+                switch (c)
+                {
+                    case '1': w += 0.5 * wunit; break;
+                    default: w += 1.5 * wunit; break;
+                }
+            }
+            w -= 0.5 * wunit;
+            x -= w / 2;
+
+            for (int i = 0; i < v1.Length; i++)
+            {
+                var c = v1[i];
+                switch (c)
+                {
+                    case '0':
+                        Res.Add(PolyLine.Stroke(x, y, x, y + hunit, stroke));
+                        Res.Add(PolyLine.Stroke(x + wunit, y, x + wunit, y + hunit, stroke));
+                        Res.Add(PolyLine.Stroke(x, y, x + wunit, y, stroke));
+                        Res.Add(PolyLine.Stroke(x, y + hunit, x + wunit, y + hunit, stroke));
+                        x += 1.5 * wunit;
+                        break;
+                    case '1':
+                        Res.Add(PolyLine.Stroke(x, y, x, y + hunit, stroke));
+                        x += 0.5 * wunit;
+                        break;
+                    case '2':
+                        Res.Add(PolyLine.Stroke(x, y, x + wunit, y, stroke));
+                        Res.Add(PolyLine.Stroke(x, y + hunit / 2, x + wunit, y + hunit / 2, stroke));
+                        Res.Add(PolyLine.Stroke(x, y + hunit, x + wunit, y + hunit, stroke));
+                        Res.Add(PolyLine.Stroke(x + wunit, y, x + wunit, y + hunit / 2, stroke));
+                        Res.Add(PolyLine.Stroke(x, y + hunit / 2, x, y + hunit, stroke));
+
+
+                        x += 1.5 * wunit;
+                        break;
+                    case '3':
+                        Res.Add(PolyLine.Stroke(x, y, x + wunit, y, stroke));
+                        Res.Add(PolyLine.Stroke(x + wunit / 2, y + hunit / 2, x + wunit, y + hunit / 2, stroke));
+                        Res.Add(PolyLine.Stroke(x, y + hunit, x + wunit, y + hunit, stroke));
+                        Res.Add(PolyLine.Stroke(x + wunit, y, x + wunit, y + hunit, stroke));
+                        x += 1.5 * wunit;
+                        break;
+                    case '4':
+                        Res.Add(PolyLine.Stroke(x, y, x, y + hunit / 2, stroke));
+                        Res.Add(PolyLine.Stroke(x, y + hunit / 2, x + wunit, y + hunit / 2, stroke));
+                        Res.Add(PolyLine.Stroke(x + wunit, y, x + wunit, y + hunit, stroke));
+
+                        x += 1.5 * wunit;
+                        break;
+                    case '5':
+                        Res.Add(PolyLine.Stroke(x, y, x + wunit, y, stroke));
+                        Res.Add(PolyLine.Stroke(x, y + hunit / 2, x + wunit, y + hunit / 2, stroke));
+                        Res.Add(PolyLine.Stroke(x, y + hunit, x + wunit, y + hunit, stroke));
+                        Res.Add(PolyLine.Stroke(x, y, x, y + hunit / 2, stroke));
+                        Res.Add(PolyLine.Stroke(x + wunit, y + hunit / 2, x + wunit, y + hunit, stroke));
+
+                        x += 1.5 * wunit;
+                        break;
+                    case '6':
+                        Res.Add(PolyLine.Stroke(x, y, x, y + hunit, stroke));
+                        Res.Add(PolyLine.Stroke(x + wunit, y + hunit / 2, x + wunit, y + hunit, stroke));
+                        Res.Add(PolyLine.Stroke(x, y, x + wunit, y, stroke));
+                        Res.Add(PolyLine.Stroke(x, y + hunit / 2, x + wunit, y + hunit / 2, stroke));
+                        Res.Add(PolyLine.Stroke(x, y + hunit, x + wunit, y + hunit, stroke));
+                        x += 1.5 * wunit;
+                        break;
+                    case '7':
+                        Res.Add(PolyLine.Stroke(x, y, x + wunit, y, stroke));
+                        Res.Add(PolyLine.Stroke(x + wunit, y, x + wunit, y + hunit, stroke));
+                        x += 1.5 * wunit;
+                        break;
+                    case '8':
+                        Res.Add(PolyLine.Stroke(x, y, x, y + hunit, stroke));
+                        Res.Add(PolyLine.Stroke(x + wunit, y, x + wunit, y + hunit, stroke));
+                        Res.Add(PolyLine.Stroke(x, y, x + wunit, y, stroke));
+                        Res.Add(PolyLine.Stroke(x, y + hunit, x + wunit, y + hunit, stroke));
+                        Res.Add(PolyLine.Stroke(x, y + hunit / 2, x + wunit, y + hunit / 2, stroke));
+
+                        x += 1.5 * wunit;
+                        break;
+                    case '9':
+                        Res.Add(PolyLine.Stroke(x, y + hunit / 2, x + wunit, y + hunit / 2, stroke));
+                        Res.Add(PolyLine.Stroke(x, y, x, y + hunit / 2, stroke));
+
+                        Res.Add(PolyLine.Stroke(x, y, x + wunit, y, stroke));
+
+                        Res.Add(PolyLine.Stroke(x + wunit, y, x + wunit, y + hunit, stroke));
+                        x += 1.5 * wunit;
+                        break;
+                }
+
+            }
+
+            Res.Add(PolyLine.Stroke(-w / 2, hunit * 0.5 - stroke*2, w / 2, hunit * 0.5 - stroke * 2, stroke));
+            foreach(var r in Res)
+            {
+                r.RotateDegrees(rotation);
+                r.Translate(_x, _y);
+            }
+
+            return Res;
+
+
+
+        }
+
     }
 
 }

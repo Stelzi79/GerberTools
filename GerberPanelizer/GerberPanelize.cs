@@ -21,6 +21,7 @@ using System.Xml.Serialization;
 
 namespace GerberCombinerBuilder
 {
+    
     public partial class GerberPanelize  : Form
     {
         GerberPanelizerParent ParentFrame;
@@ -58,7 +59,7 @@ namespace GerberCombinerBuilder
         public GerberPanelize(GerberPanelizerParent Host, Treeview tv, InstanceDialog id)
         {
             ParentFrame = Host;
-            Gerber.ArcQualityScaleFactor = 15;
+            Gerber.ArcQualityScaleFactor = 20;
             InitializeComponent();
             RotateLeftHover.Visible = false;
             RotateRightHover.Visible = false;
@@ -223,8 +224,8 @@ namespace GerberCombinerBuilder
         public void LoadFile(string filename)
         {
             LoadedFile = filename;
-            ThePanel.LoadFile(filename);
-            ThePanel.UpdateShape(); 
+            ThePanel.LoadFile(new StandardConsoleLog(), filename);
+            ThePanel.UpdateShape(new StandardConsoleLog()); 
             TV.BuildTree(this, ThePanel.TheSet);
             ZoomToFit();
 
@@ -291,9 +292,22 @@ namespace GerberCombinerBuilder
             }
         }
 
+        public class ProgressForward : GerberLibrary.ProgressLog
+        {
+            public Progress parent;
+            public ProgressForward(Progress p)
+            {
+                parent = p;
+            }
+            public override void AddString(string text, float progress = -1)
+            {
+                parent.AddString(text, progress);
+            }
+        }
+
         public void ExportThreadFunc()
         {
-            ThePanel.SaveGerbersToFolder(BaseName, ExportFolder, ProgressDialog);
+            ThePanel.SaveGerbersToFolder(BaseName, ExportFolder,new ProgressForward( ProgressDialog));
         }
 
 
@@ -368,7 +382,7 @@ namespace GerberCombinerBuilder
                 {
                     MouseCapture = true;
                     DragStartCoord = new PointD(e.X, e.Y);
-                    DragInstanceOriginalPosition = new PointD(SelectedInstance.Center);
+                    DragInstanceOriginalPosition = SelectedInstance.Center;
                 }
                 SetSelectedInstance(SelectedInstance);
             }
@@ -421,7 +435,7 @@ namespace GerberCombinerBuilder
                 {
                     if (SelectedInstance != null)
                     {
-                        SelectedInstance.Center = DragInstanceOriginalPosition.ToF();
+                        SelectedInstance.Center = DragInstanceOriginalPosition;
                         
                     }
                     Redraw(false);
@@ -453,7 +467,7 @@ namespace GerberCombinerBuilder
                 PointD Delta = new PointD(e.X, e.Y) - DragStartCoord;
                 Delta.X /= Zoom;
                 Delta.Y /= -Zoom;
-                SelectedInstance.Center = Snap(DragInstanceOriginalPosition + Delta).ToF();
+                SelectedInstance.Center = Snap(DragInstanceOriginalPosition + Delta);
                 UpdateHoverControls();
                 //       SelectedInstance.Center.Y = (float)(DragInstanceOriginalPosition.Y + Delta.Y);
                 Redraw(false);
@@ -633,7 +647,7 @@ namespace GerberCombinerBuilder
             if (ShapeMarkedForUpdate && (AutoUpdate || ForceShapeUpdate))
             {
                 //Console.WriteLine("updating shape..");
-                ThePanel.UpdateShape(); // check if needed?
+                ThePanel.UpdateShape(new StandardConsoleLog()); // check if needed?
                 ShapeMarkedForUpdate = false;
                 ForceShapeUpdate = false;
             }
@@ -656,7 +670,7 @@ namespace GerberCombinerBuilder
 
             GL.Disable(EnableCap.DepthTest);
             GL.Enable(EnableCap.Blend);
-            GL.BlendFunc(BlendingFactorSrc.SrcAlpha, BlendingFactorDest.OneMinusSrcAlpha);
+            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
             GL.Hint(HintTarget.LineSmoothHint, HintMode.Nicest);
             GL.Hint(HintTarget.PointSmoothHint, HintMode.Nicest);
 
@@ -702,7 +716,7 @@ namespace GerberCombinerBuilder
 
                     foreach (var a in Directory.GetFiles(path, "*.*"))
                     {
-                        GIC.AddBoardToSet(a);
+                        GIC.AddBoardToSet(a, new StandardConsoleLog());
                     }
 
                     GIC.WriteImageFiles(OFD.FileName);
@@ -728,11 +742,11 @@ namespace GerberCombinerBuilder
                     if (Directory.Exists(S) || (File.Exists(S) && (Path.GetExtension(S).ToLower() == ".zip" || Path.GetExtension(S).ToLower() == "zip")))
                     {
                         Console.WriteLine("Adding dropped folder: {0}", S);
-                        var R = ThePanel.AddGerberFolder(S);
+                        var R = ThePanel.AddGerberFolder(new StandardConsoleLog(), S);
                         foreach (var s in R)
                         {
                             GerberInstance GI = new GerberInstance() { GerberPath = s };
-                            GI.Center = DropPoint.ToF();
+                            GI.Center = DropPoint;
                             ThePanel.TheSet.Instances.Add(GI);
                             SelectedInstance = GI;
                         }
@@ -795,7 +809,7 @@ namespace GerberCombinerBuilder
 
         private void toolStripMenuItem1_Click(object sender, EventArgs e)
         {
-            ThePanel.BuildAutoTabs();// GenerateTabLocations();
+            ThePanel.BuildAutoTabs(new StandardConsoleLog());// GenerateTabLocations();
             Redraw(true);
         }
 
@@ -815,7 +829,7 @@ namespace GerberCombinerBuilder
         {
             if (folderBrowserDialog1.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             {
-                var R = ThePanel.AddGerberFolder(folderBrowserDialog1.SelectedPath);
+                var R = ThePanel.AddGerberFolder(new StandardConsoleLog(),folderBrowserDialog1.SelectedPath);
                 foreach (var s in R)
                 {
                     GerberInstance GI = new GerberInstance() { GerberPath = s };
@@ -897,7 +911,7 @@ namespace GerberCombinerBuilder
             if (SelectedInstance.GetType() == typeof(GerberInstance))
             {
                 string path = (SelectedInstance as GerberInstance).GerberPath;
-                GerberLibrary.ArtWork.Functions.CreateArtLayersForFolder(path, GerberLibrary.ArtWork.ArtLayerStyle.CheckerField);
+                GerberLibrary.ArtWork.Functions.CreateArtLayersForFolder(new StandardConsoleLog(), path, GerberLibrary.ArtWork.ArtLayerStyle.CheckerField);
             }
         }
 
@@ -964,7 +978,7 @@ namespace GerberCombinerBuilder
             if (SelectedInstance.GetType() == typeof(GerberInstance))
             {
                 string path = (SelectedInstance as GerberInstance).GerberPath;
-                GerberLibrary.ArtWork.Functions.CreateArtLayersForFolder(path, GerberLibrary.ArtWork.ArtLayerStyle.OffsetCurves_GoldfishBoard);
+                GerberLibrary.ArtWork.Functions.CreateArtLayersForFolder(new StandardConsoleLog(), path, GerberLibrary.ArtWork.ArtLayerStyle.OffsetCurves_GoldfishBoard);
             }
         }
 
@@ -974,7 +988,7 @@ namespace GerberCombinerBuilder
             if (SelectedInstance.GetType() == typeof(GerberInstance))
             {
                 string path = (SelectedInstance as GerberInstance).GerberPath;
-                GerberLibrary.ArtWork.Functions.CreateArtLayersForFolder(path, GerberLibrary.ArtWork.ArtLayerStyle.FlowField);
+                GerberLibrary.ArtWork.Functions.CreateArtLayersForFolder(new StandardConsoleLog(), path, GerberLibrary.ArtWork.ArtLayerStyle.FlowField);
             }
 
         }
@@ -990,7 +1004,7 @@ namespace GerberCombinerBuilder
             if (SelectedInstance.GetType() == typeof(GerberInstance))
             {
                 string path = (SelectedInstance as GerberInstance).GerberPath;
-                GerberLibrary.ArtWork.Functions.CreateArtLayersForFolder(path, GerberLibrary.ArtWork.ArtLayerStyle.ReactDiffuse);
+                GerberLibrary.ArtWork.Functions.CreateArtLayersForFolder(new StandardConsoleLog(), path, GerberLibrary.ArtWork.ArtLayerStyle.ReactDiffuse);
             }
         }
 
@@ -1000,7 +1014,7 @@ namespace GerberCombinerBuilder
             if (SelectedInstance.GetType() == typeof(GerberInstance))
             {
                 string path = (SelectedInstance as GerberInstance).GerberPath;
-                GerberLibrary.ArtWork.Functions.CreateArtLayersForFolder(path, GerberLibrary.ArtWork.ArtLayerStyle.PrototypeEdge);
+                GerberLibrary.ArtWork.Functions.CreateArtLayersForFolder(new StandardConsoleLog(), path, GerberLibrary.ArtWork.ArtLayerStyle.PrototypeEdge);
             }
         }
 
@@ -1010,7 +1024,7 @@ namespace GerberCombinerBuilder
         {
             if (ShapeMarkedForUpdate)
             {
-                ThePanel.UpdateShape(); ShapeMarkedForUpdate = false;
+                ThePanel.UpdateShape(new StandardConsoleLog()); ShapeMarkedForUpdate = false;
                 Redraw(false);
                 ProcessButton.Enabled = false;
             }
@@ -1038,7 +1052,7 @@ namespace GerberCombinerBuilder
                 AutoUpdate = true;
                 if (ShapeMarkedForUpdate)
                 {
-                    ThePanel.UpdateShape(); ShapeMarkedForUpdate = false;
+                    ThePanel.UpdateShape(new StandardConsoleLog()); ShapeMarkedForUpdate = false;
                     Redraw(false);
 
 
