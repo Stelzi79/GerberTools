@@ -538,7 +538,6 @@ namespace GerberLibrary
 
                 {
                     int img = 0;
-                    int forceiter = 0;
                     RD_Elem[] FieldA = new RD_Elem[iW * iH];
                     RD_Elem[] FieldB = new RD_Elem[iW * iH];
                     Random R = new Random(0);
@@ -2321,9 +2320,10 @@ namespace GerberLibrary
         {
 
             //text = "Test1'1234'0+!@\"#$@%#&*(";
-
+            
             if (FS == null)
             {
+
                 Console.WriteLine("DrawString called with no active fontset (\"{0}\")! Ignoring!", text);
                 return;
             }
@@ -2741,6 +2741,26 @@ namespace GerberLibrary
             }
 
             return B;
+        }
+
+        internal void Arrow(PointD pointD1, PointD pointD2, double headwidth =3, double headlength = 3, double linewidth=0.5)
+        {
+            PolyLine Stem = new PolyLine();
+            Stem.Vertices.Add(pointD1);
+
+            var d = pointD2 - pointD1;
+            d.Normalize();
+
+            Stem.Vertices.Add(pointD2 - d* headlength);
+
+            var side = d.Rotate(90);
+            PolyLine ArrowHead = new PolyLine();
+            var hheadwidth = headwidth / 2;
+            
+            ArrowHead.MakeTriangle(pointD2, pointD2 - d * headlength + side * hheadwidth, pointD2 - d * headlength - side * hheadwidth);
+            
+            AddPolygon(ArrowHead);
+            AddPolyLine(Stem, linewidth);
         }
     }
 }

@@ -13,11 +13,11 @@ namespace GerberLibrary
     {
         public static void MergeAll(List<string> Files, string output, ProgressLog Log)
         {
-            Log.PushActivity("Gerber MergeAll");
-            if (Files.Count > 2)
+            int Check = Log.PushActivity("Gerber MergeAll");
+            if (Files.Count > 1)
             {
                 MultiMerge(Files[0], Files.Skip(1).ToList(), output, Log);
-                Log.PopActivity();
+                Log.PopActivity(Check);
                 return;
             }
             if (Files.Count < 2)
@@ -32,10 +32,10 @@ namespace GerberLibrary
                 {
                     Log.AddString("Need files to do anything??");
                 }
-                Log.PopActivity(); 
+                Log.PopActivity(Check);
                 return;
             }
-           
+
 
             List<string> TempFiles = new List<string>();
             if (true)
@@ -45,8 +45,8 @@ namespace GerberLibrary
                 foreach (var a in Files)
                 {
                     LeftOverFiles.Add(a);
-                } 
-                
+                }
+
                 while (LeftOverFiles.Count > 1)
                 {
                     Log.AddString(String.Format("{0} files left in mergequeue", LeftOverFiles.Count));
@@ -87,16 +87,16 @@ namespace GerberLibrary
                 }
                 catch (Exception) { }
             }
-            Log.PopActivity();
+            Log.PopActivity(Check);
         }
 
         public static void MultiMerge(string file1, List<string> filestomergein, string output, ProgressLog Log)
         {
-            Log.PushActivity("Gerber MultiMerge");
+            int check = Log.PushActivity("Gerber MultiMerge");
             if (File.Exists(file1) == false)
             {
                 Log.AddString(String.Format("{0} not found! stopping process!", Path.GetFileName(file1)));
-                Log.PopActivity();
+                Log.PopActivity(check);
                 return;
             }
             List<ParsedGerber> OtherFiles = new List<ParsedGerber>();
@@ -108,7 +108,7 @@ namespace GerberLibrary
                 if (File.Exists(otherfile) == false)
                 {
                     Log.AddString(String.Format("{0} not found! stopping process!", Path.GetFileName(otherfile)));
-                    Log.PopActivity();
+                    Log.PopActivity(check);
                     return;
                 }
 
@@ -118,7 +118,7 @@ namespace GerberLibrary
                 OtherFiles.Add(OtherFileParsed);
                 OtherFileParsed.OriginalLines = OtherLines;
                 MaxDigitsAfter = Math.Max(OtherFileParsed.State.CoordinateFormat.DigitsAfter, MaxDigitsAfter);
-                MaxDigitsBefore= Math.Max(OtherFileParsed.State.CoordinateFormat.DigitsBefore, MaxDigitsBefore);
+                MaxDigitsBefore = Math.Max(OtherFileParsed.State.CoordinateFormat.DigitsBefore, MaxDigitsBefore);
 
             }
             List<string> File1Lines = File.ReadAllLines(file1).ToList();
@@ -126,9 +126,6 @@ namespace GerberLibrary
             File1Lines = PolyLineSet.SanitizeInputLines(File1Lines);
             ParsedGerber File1Parsed = PolyLineSet.ParseGerber274x(Log, File1Lines, true, false, new GerberParserState() { PreCombinePolygons = false, GenerateGeometry = false });
 
-                        
-                   
-            
             List<string> OutputLines = new List<string>();
             GerberNumberFormat GNF = new GerberNumberFormat();
             GNF.DigitsBefore = Math.Max(File1Parsed.State.CoordinateFormat.DigitsBefore, MaxDigitsBefore);
@@ -145,26 +142,31 @@ namespace GerberLibrary
 
             Dictionary<string, string> MacroDict = new Dictionary<string, string>();
 
-
             foreach (var a in File1Parsed.State.ApertureMacros)
             {
-                OutputLines.Add(a.Value.BuildGerber(GNF, 0).Trim());
-                MacroDict[a.Value.Name + "____"] = a.Value.Name;
+                //a.Value.Name = a.Value.Name + "_FILE0";
+                OutputLines.Add(a.Value.BuildGerber(GNF, 0, "_FILE0").Trim());
+                MacroDict[a.Value.Name ] = a.Value.Name;
             }
+            int FileN = 1;
             foreach (var fileparsed in OtherFiles)
             {
+
+                string FileSuffix = "_FILE" + FileN.ToString();
+                FileN++;
                 foreach (var a in fileparsed.State.ApertureMacros)
                 {
+                    /*a.Value.Name = a.Value.Name + FileSuffix;
+
                     int off = 0;
-                    string name = string.Format("{0}{1}", a.Value.Name, off);
+                    string name = string.Format("{0}", a.Value.Name);
                     while (MacroDict.Values.Contains(name))
                     {
                         off++;
-                        name = string.Format("{0}{1}", a.Value.Name, off);
-                    }
-                    MacroDict[a.Value.Name] = name;
-                    a.Value.Name = name;
-                    OutputLines.Add(a.Value.BuildGerber(GNF, 0).Trim());
+                        name = string.Format("{0}_{1}", a.Value.Name, off);
+                    }*/
+                    MacroDict[a.Value.Name] = a.Value.Name;
+                    OutputLines.Add(a.Value.BuildGerber(GNF, 0, FileSuffix).Trim());
                 }
             }
 
@@ -172,31 +174,43 @@ namespace GerberLibrary
 
             foreach (var a in File1Parsed.State.Apertures)
             {
-                OutputLines.Add(a.Value.BuildGerber(GNF));
+                //if (a.Value.ShapeType == GerberApertureShape.Macro)
+                //{
+                    //a.Value.MacroName = a.Value.MacroName + "_FILE0";
+                //}
+                OutputLines.Add(a.Value.BuildGerber(GNF, "_FILE0"));
             }
-            
+
             int ApertureOffset = 0;
             if (File1Parsed.State.Apertures.Count > 0) ApertureOffset = File1Parsed.State.Apertures.Keys.Max() + 1;
 
 
             int LastID = ApertureOffset + 10;
+            FileN = 1;
             foreach (var fileparsed in OtherFiles)
             {
                 CheckAllApertures(fileparsed, fileparsed.OriginalLines, Log);
+                string FileSuffix = "_FILE" + FileN.ToString();
+                FileN++;
 
                 foreach (var a in fileparsed.State.Apertures)
                 {
-                    if (a.Value.ShapeType == GerberApertureShape.Macro || a.Value.ShapeType == GerberApertureShape.Compound)
+
+                    if (a.Value.ShapeType == GerberApertureShape.Macro )
                     {
-                        a.Value.MacroName = MacroDict[a.Value.MacroName];
+                        a.Value.MacroName = a.Value.MacroName + FileSuffix;
+                //        a.Value.MacroName = MacroDict[a.Value.MacroName];
                     }
                     a.Value.ID = LastID++;
-                    OutputLines.Add(a.Value.BuildGerber(GNF));
+                    OutputLines.Add(a.Value.BuildGerber(GNF, FileSuffix));
                 }
             }
             // stuff goes here.
             //OutputLines.Add(String.Format("G04 :starting {0}", Path.GetFileNameWithoutExtension(file1)));
             string CurrentPolarity = "LPD";
+            bool Repeating = false;
+            double X = 0;
+            double Y = 0;
             for (int i = 0; i < File1Lines.Count; i++)
             {
                 string CurrentLine = File1Lines[i];
@@ -223,12 +237,38 @@ namespace GerberLibrary
                                         if (CurrentPolarity != "LPC") { OutputLines.Add("%LPC*%"); CurrentPolarity = "LPC"; }
                                         break;
                                     default:
-                                        if (CurrentLine.Length > 1 && CurrentLine[CurrentLine.Length - 1] != '%')
+                                        if (CurrentLine.StartsWith("%SR"))
                                         {
-                                            while (CurrentLine[CurrentLine.Length - 1] != '%')
+                                            OutputLines.Add(CurrentLine);
+                                           // Console.WriteLine("StepRepeatYay!", CurrentLine);
+                                            if (GCC.numbercommands.Count > 0)
                                             {
-                                                i++;
-                                                CurrentLine = File1Lines[i];
+                                                int x = (int)GCC.numbercommands[0];
+                                                int y = (int)GCC.numbercommands[1];
+                                                if (x > 1 && y > 1)
+                                                {
+                                                    Repeating = true;
+                                                }
+                                                else
+                                                {
+                                                    Repeating = false;
+                                                }
+                                            }
+                                            else
+                                            {
+                                                Repeating = false;
+                                            }
+                                        }
+                                        else
+                                        {
+                                            //Console.WriteLine("eating % commands... {0}", CurrentLine);
+                                            if (CurrentLine.Length > 1 && CurrentLine[CurrentLine.Length - 1] != '%')
+                                            {
+                                                while (CurrentLine[CurrentLine.Length - 1] != '%')
+                                                {
+                                                    i++;
+                                                    CurrentLine = File1Lines[i];
+                                                }
                                             }
                                         }
                                         break;
@@ -253,6 +293,21 @@ namespace GerberLibrary
 
                                     //GS.Split(GCC.originalline, File1Parsed.State.CoordinateFormat);
                                     GS.ScaleToMM(File1Parsed.State.CoordinateFormat);
+
+                                    if (File1Parsed.State.CoordinateFormat.Relativemode)
+                                    {
+                                        if (GS.Has("X"))
+                                        {
+                                            X += GS.Get("X");
+                                            GS.Set("X", X);
+                                        }
+                                        if (GS.Has("Y"))
+                                        {
+                                            Y += GS.Get("Y");
+                                            GS.Set("Y", Y);
+                                        }
+                                    }
+
                                     GS.ScaleToFile(GNF);
 
 
@@ -301,10 +356,13 @@ namespace GerberLibrary
                         default: // move commands -> transform 
                             {
                                 GerberSplitter GS = new GerberSplitter();
-                                double X = 0;
-                                double Y = 0;
+                                if (File1Parsed.State.CoordinateFormat.Relativemode == false)
+                                {
+                                    X = 0;
+                                    Y = 0;
+                                }
                                 GS.Split(GCC.originalline, File1Parsed.State.CoordinateFormat);
-
+                                GS.ApplyMirroring(File1Parsed.State);
                                 if (GS.Has("D") || GS.Has("X") || GS.Has("Y"))
                                 {
                                     if (GS.Get("D") > 3)
@@ -323,8 +381,8 @@ namespace GerberLibrary
                                             if (GS.Has("X") && GS.Has("Y"))
                                             {
 
-                                                X = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
-                                                Y = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
+                                                X += File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
+                                                Y += File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
 
                                                 OutLine = String.Format("X{0}Y{1}", GNF.Format(GNF._ScaleMMToFile(X)), GNF.Format(GNF._ScaleMMToFile(Y)));
                                             }
@@ -332,14 +390,14 @@ namespace GerberLibrary
                                             {
                                                 if (GS.Has("X"))
                                                 {
-                                                    X = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
+                                                    X += File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
                                                     OutLine = String.Format("X{0}", GNF.Format(GNF._ScaleMMToFile(X)));
                                                 }
                                                 else
                                                 {
                                                     if (GS.Has("Y"))
                                                     {
-                                                        Y = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
+                                                        Y += File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
                                                         OutLine = String.Format("Y{0}", GNF.Format(GNF._ScaleMMToFile(Y)));
                                                     }
                                                     else
@@ -390,13 +448,22 @@ namespace GerberLibrary
                 }
             }
             // TODO: set polarity back to "neutral" - or should each file do this at the start anyway? 
+        
+            if (Repeating)
+            {
+                OutputLines.Add("G04 previous file was still repeating.. stopping that*");
+                OutputLines.Add("%SR*%");
+                Repeating = false;
+            }
             if (Gerber.ShowProgress)
             {
-              Log.AddString(String.Format("File 1 format: {0}", File1Parsed.State.CoordinateFormat));
+                Log.AddString(String.Format("File 1 format: {0}", File1Parsed.State.CoordinateFormat));
             }
 
             foreach (var otherfile in OtherFiles)
             {
+                X = 0;
+                Y = 0;
                 if (Gerber.ShowProgress)
                 {
                     Log.AddString(String.Format("File 2 format: {0}", otherfile.State.CoordinateFormat));
@@ -422,21 +489,44 @@ namespace GerberLibrary
                                     {
                                         case "LPD":
                                             if (CurrentPolarity != "LPD") { OutputLines.Add("%LPD*%"); CurrentPolarity = "LPD"; }
-
                                             break;
                                         case "LPC":
                                             if (CurrentPolarity != "LPC") { OutputLines.Add("%LPC*%"); CurrentPolarity = "LPC"; }
-
-
                                             break;
 
                                         default:
-                                            if (CurrentLine.Length > 1 && CurrentLine[CurrentLine.Length - 1] != '%')
+                                            if (CurrentLine.StartsWith("%SR"))
                                             {
-                                                while (CurrentLine[CurrentLine.Length - 1] != '%')
+                                                OutputLines.Add(CurrentLine);
+                                                //Console.WriteLine("StepRepeatYay!", CurrentLine);
+                                                if (GCC.numbercommands.Count > 0)
                                                 {
-                                                    i++;
-                                                    CurrentLine = otherfile.OriginalLines[i];
+                                                    int x = (int)GCC.numbercommands[0];
+                                                    int y = (int)GCC.numbercommands[1];
+                                                    if (x > 1 && y > 1)
+                                                    {
+                                                        Repeating = true;
+                                                    }
+                                                    else
+                                                    {
+                                                        Repeating = false;
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    Repeating = false;
+                                                }
+                                            }
+                                            else
+                                            {
+                                                //Console.WriteLine("Eating gerber % commands here too! {0}", FinalLine);
+                                                if (CurrentLine.Length > 1 && CurrentLine[CurrentLine.Length - 1] != '%')
+                                                {
+                                                    while (CurrentLine[CurrentLine.Length - 1] != '%')
+                                                    {
+                                                        i++;
+                                                        CurrentLine = otherfile.OriginalLines[i];
+                                                    }
                                                 }
                                             }
                                             break;
@@ -447,6 +537,8 @@ namespace GerberLibrary
                                 {
                                     GerberSplitter GS = new GerberSplitter();
                                     GS.Split(GCC.originalline, otherfile.State.CoordinateFormat);
+                                    GS.ApplyMirroring(otherfile.State);
+
                                     if ((int)GS.Get("G") == 54)
                                     {
                                         if (GS.Has("D") && GS.Get("D") > 3)
@@ -463,10 +555,23 @@ namespace GerberLibrary
                                             case 2:
                                             case 3:
                                                 {
-                                                 //   double X = 0;
+                                                    //   double X = 0;
                                                     //     double Y = 0;
                                                     //GS.Split(GCC.originalline, otherfile.State.CoordinateFormat);
                                                     GS.ScaleToMM(otherfile.State.CoordinateFormat);
+                                                    if (otherfile.State.CoordinateFormat.Relativemode)
+                                                    {
+                                                        if (GS.Has("X"))
+                                                        {
+                                                            X += GS.Get("X");
+                                                            GS.Set("X", X);
+                                                        }
+                                                        if (GS.Has("Y"))
+                                                        {
+                                                            Y += GS.Get("Y");
+                                                            GS.Set("Y", Y);
+                                                        }
+                                                    }
                                                     GS.ScaleToFile(GNF);
                                                     //         if (GS.Has("X")) GS.Set("X", File2Parsed.CoordinateFormat.ScaleFileToMM(GS.Get("X")));
                                                     //        if (GS.Has("Y")) GS.Set("Y", File2Parsed.CoordinateFormat.ScaleFileToMM(GS.Get("Y")));
@@ -505,10 +610,13 @@ namespace GerberLibrary
                             default: // move commands -> transform 
                                 {
                                     GerberSplitter GS = new GerberSplitter();
-                                    double X = 0;
-                                    double Y = 0;
+                                    if (otherfile.State.CoordinateFormat.Relativemode == false)
+                                    {
+                                        X = 0;
+                                        Y = 0;
+                                    }
                                     GS.Split(GCC.originalline, otherfile.State.CoordinateFormat);
-
+                                    GS.ApplyMirroring(otherfile.State);
 
                                     if (GS.Has("D") || GS.Has("X") || GS.Has("Y"))
                                     {
@@ -528,8 +636,8 @@ namespace GerberLibrary
                                                 if (GS.Has("X") && GS.Has("Y"))
                                                 {
 
-                                                    X = otherfile.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
-                                                    Y = otherfile.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
+                                                    X += otherfile.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
+                                                    Y += otherfile.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
 
                                                     OutLine = String.Format("X{0}Y{1}", GNF.Format(GNF._ScaleMMToFile(X)), GNF.Format(GNF._ScaleMMToFile(Y)));
                                                 }
@@ -537,14 +645,14 @@ namespace GerberLibrary
                                                 {
                                                     if (GS.Has("X"))
                                                     {
-                                                        X = otherfile.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
+                                                        X += otherfile.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
                                                         OutLine = String.Format("X{0}", GNF.Format(GNF._ScaleMMToFile(X)));
                                                     }
                                                     else
                                                     {
                                                         if (GS.Has("Y"))
                                                         {
-                                                            Y = otherfile.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
+                                                            Y += otherfile.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
                                                             OutLine = String.Format("Y{0}", GNF.Format(GNF._ScaleMMToFile(Y)));
                                                         }
                                                         else
@@ -618,18 +726,26 @@ namespace GerberLibrary
                     }
                     catch (Exception) { }
                 }
+
+                if (Repeating)
+                {
+                    OutputLines.Add("G04 previous file was still repeating.. stopping that*");
+                    OutputLines.Add("%SR*%");
+                    Repeating = false;
+                }
+
             }
 
 
             OutputLines.Add(Gerber.EOF);
             Gerber.WriteAllLines(output, PolyLineSet.SanitizeInputLines(OutputLines));
 
-            Log.PopActivity();
+            Log.PopActivity(check);
 
 
         }
 
-        internal static void MergeAllByFileType(List<string> allFiles, string targetfolder,string combinedfilename, ProgressLog Logger)
+        internal static void MergeAllByFileType(List<string> allFiles, string targetfolder, string combinedfilename, ProgressLog Logger)
         {
             Dictionary<string, List<string>> FilesPerExt = new Dictionary<string, List<string>>();
             Dictionary<string, BoardFileType> FileTypePerExt = new Dictionary<string, BoardFileType>();
@@ -637,12 +753,12 @@ namespace GerberLibrary
             {
                 string ext = Path.GetExtension(s).ToLower(); ;
                 if (ext == "xln") ext = "txt";
-                if (ext == "drl") ext = "txt";                
+                if (ext == "drl") ext = "txt";
                 BoardLayer layer;
                 BoardSide Side;
 
                 Gerber.DetermineBoardSideAndLayer(s, out Side, out layer);
-                ext = String.Format(".{0}_{1}", layer, Side);                
+                ext = String.Format(".{0}_{1}", layer, Side);
 
                 if (FilesPerExt.ContainsKey(ext) == false)
                 {
@@ -671,7 +787,7 @@ namespace GerberLibrary
                             if (a.Key.ToLower() != ".gko")
                             {
                                 string Filename = Path.Combine(targetfolder, combinedfilename + a.Key);
-                            //    FinalFiles.Add(Filename);
+                                //    FinalFiles.Add(Filename);
                                 GerberMerger.MergeAll(a.Value, Filename, Logger);
                             }
                         }
@@ -683,7 +799,7 @@ namespace GerberLibrary
 
         private static void CheckAllApertures(ParsedGerber file1Parsed, List<string> File1Lines, ProgressLog Log)
         {
-            
+
             for (int i = 0; i < File1Lines.Count; i++)
             {
                 string CurrentLine = File1Lines[i];
@@ -716,7 +832,8 @@ namespace GerberLibrary
                                     }
 
                                 }
-                            }break;
+                            }
+                            break;
                         case 'D':
                             {
                                 GerberSplitter GS = new GerberSplitter();
@@ -731,7 +848,8 @@ namespace GerberLibrary
                                         file1Parsed.State.Apertures[ApertureID] = GAT;
                                     }
                                 }
-                            }break;
+                            }
+                            break;
                     }
                 }
                 catch (Exception) { }
@@ -758,8 +876,8 @@ namespace GerberLibrary
 
             List<string> File1Lines = File.ReadAllLines(file1).ToList();
             File1Lines = PolyLineSet.SanitizeInputLines(File1Lines);
-            ParsedGerber File1Parsed = PolyLineSet.ParseGerber274x(Log, File1Lines, true,false, new GerberParserState(){ PreCombinePolygons = false, GenerateGeometry = false});
-          
+            ParsedGerber File1Parsed = PolyLineSet.ParseGerber274x(Log, File1Lines, true, false, new GerberParserState() { PreCombinePolygons = false, GenerateGeometry = false });
+
             List<string> File2Lines = File.ReadAllLines(file2).ToList();
             File2Lines = PolyLineSet.SanitizeInputLines(File2Lines);
             ParsedGerber File2Parsed = PolyLineSet.ParseGerber274x(Log, File2Lines, true, false, new GerberParserState() { PreCombinePolygons = false, GenerateGeometry = false });
@@ -786,7 +904,7 @@ namespace GerberLibrary
             }
 
             GNF.SetImperialMode();
-       
+
             //OutputLines.Add(String.Format("G04 merged from {0} and {1}", Path.GetFileNameWithoutExtension(file1), Path.GetFileNameWithoutExtension(file2)));
             OutputLines.Add(GNF.BuildMetricImperialFormatLine());
             OutputLines.Add("%OFA0B0*%");
@@ -799,41 +917,36 @@ namespace GerberLibrary
 
             foreach (var a in File1Parsed.State.ApertureMacros)
             {
-                OutputLines.Add(a.Value.BuildGerber(GNF, 0).Trim());
-                MacroDict[a.Value.Name+"____"] = a.Value.Name;               
+                OutputLines.Add(a.Value.BuildGerber(GNF, 0, "_FILE0").Trim());
+                MacroDict[a.Value.Name + "_FILE0"] = a.Value.Name;
             }
 
             foreach (var a in File2Parsed.State.ApertureMacros)
             {
-                int off = 0;
-                 string name = string.Format("{0}{1}", a.Value.Name, off);
-                while (MacroDict.Values.Contains(name))
-                {
-                    off++;
-                     name = string.Format("{0}{1}", a.Value.Name, off);
-                }
-                MacroDict[a.Value.Name] = name;
-                a.Value.Name = name;
-                OutputLines.Add(a.Value.BuildGerber(GNF, 0).Trim());
+                MacroDict[a.Value.Name + "_FILE1"] = a.Value.Name;
+                OutputLines.Add(a.Value.BuildGerber(GNF, 0,"_FILE1").Trim());
             }
 
             foreach (var a in File1Parsed.State.Apertures)
             {
-                OutputLines.Add(a.Value.BuildGerber(GNF));
+                OutputLines.Add(a.Value.BuildGerber(GNF, "_FILE0"));
             }
 
             foreach (var a in File2Parsed.State.Apertures)
             {
                 if (a.Value.ShapeType == GerberApertureShape.Macro || a.Value.ShapeType == GerberApertureShape.Compound)
                 {
-                    a.Value.MacroName = MacroDict[a.Value.MacroName];
+//                    a.Value.MacroName = MacroDict[a.Value.MacroName];
                 }
                 a.Value.ID += ApertureOffset;
-                OutputLines.Add(a.Value.BuildGerber(GNF));
+                OutputLines.Add(a.Value.BuildGerber(GNF, "_FILE1"));
             }
             // stuff goes here.
             //OutputLines.Add(String.Format("G04 :starting {0}", Path.GetFileNameWithoutExtension(file1)));
-            string CurrentPolarity = "LPD"; 
+            string CurrentPolarity = "LPD";
+            bool Repeating = false;
+            double X = 0;
+            double Y = 0;
             for (int i = 0; i < File1Lines.Count; i++)
             {
                 string CurrentLine = File1Lines[i];
@@ -860,12 +973,40 @@ namespace GerberLibrary
                                         if (CurrentPolarity != CurrentLine) { OutputLines.Add("%LPC*%"); CurrentPolarity = CurrentLine; }
                                         break;
                                     default:
-                                        if (CurrentLine.Length > 1 && CurrentLine[CurrentLine.Length - 1] != '%')
+                                        if (CurrentLine.StartsWith("%SR"))
                                         {
-                                            while (CurrentLine[CurrentLine.Length - 1] != '%')
+                                            OutputLines.Add(CurrentLine);
+                                            //Console.WriteLine("StepRepeatYay!", CurrentLine);
+                                            if (GCC.numbercommands.Count > 0)
                                             {
-                                                i++;
-                                                CurrentLine = File1Lines[i];
+                                                int x = (int)GCC.numbercommands[0];
+                                                int y = (int)GCC.numbercommands[1];
+                                                if (x > 1 && y > 1)
+                                                {
+                                                    Repeating = true;
+                                                }
+                                                else
+                                                {
+                                                    Repeating = false;
+                                                }
+                                            }
+                                            else
+                                            {
+                                                Repeating = false;
+                                            }
+
+
+                                        }
+                                        else
+                                        {
+                                            //Console.WriteLine("eating % commands! {0}", CurrentLine);
+                                            if (CurrentLine.Length > 1 && CurrentLine[CurrentLine.Length - 1] != '%')
+                                            {
+                                                while (CurrentLine[CurrentLine.Length - 1] != '%')
+                                                {
+                                                    i++;
+                                                    CurrentLine = File1Lines[i];
+                                                }
                                             }
                                         }
                                         break;
@@ -876,7 +1017,7 @@ namespace GerberLibrary
                             {
                                 GerberSplitter GS = new GerberSplitter();
                                 GS.Split(GCC.originalline, File1Parsed.State.CoordinateFormat);
-                                if ((int)GS.Get("G")==54)
+                                if ((int)GS.Get("G") == 54)
                                 {
                                     if (GS.Has("D") && GS.Get("D") > 3)
                                     {
@@ -886,11 +1027,11 @@ namespace GerberLibrary
                                 else
                                     if ((int)GCC.numbercommands[0] == 3 || (int)GCC.numbercommands[0] == 2 || (int)GCC.numbercommands[0] == 1)
                                 {
-                             
+
                                     //GS.Split(GCC.originalline, File1Parsed.State.CoordinateFormat);
                                     GS.ScaleToMM(File1Parsed.State.CoordinateFormat);
                                     GS.ScaleToFile(GNF);
-                                    
+
 
                                     OutputLines.Add(GS.Rebuild(GNF));
                                     //   Log.AddString("Unsupported arc command found!");
@@ -937,10 +1078,13 @@ namespace GerberLibrary
                         default: // move commands -> transform 
                             {
                                 GerberSplitter GS = new GerberSplitter();
-                                double X = 0;
-                                double Y = 0;
+                                if (File1Parsed.State.CoordinateFormat.Relativemode == false)
+                                {
+                                    X = 0;
+                                    Y = 0;
+                                }
                                 GS.Split(GCC.originalline, File1Parsed.State.CoordinateFormat);
-                                
+
                                 if (GS.Has("D") || GS.Has("X") || GS.Has("Y"))
                                 {
                                     if (GS.Get("D") > 3)
@@ -959,23 +1103,23 @@ namespace GerberLibrary
                                             if (GS.Has("X") && GS.Has("Y"))
                                             {
 
-                                                X = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
-                                                Y = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
-                                                
-                                                OutLine =  String.Format("X{0}Y{1}", GNF.Format(GNF._ScaleMMToFile(X)), GNF.Format(GNF._ScaleMMToFile(Y)));
+                                                X += File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
+                                                Y += File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
+
+                                                OutLine = String.Format("X{0}Y{1}", GNF.Format(GNF._ScaleMMToFile(X)), GNF.Format(GNF._ScaleMMToFile(Y)));
                                             }
                                             else
                                             {
                                                 if (GS.Has("X"))
                                                 {
-                                                    X = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
+                                                    X += File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
                                                     OutLine = String.Format("X{0}", GNF.Format(GNF._ScaleMMToFile(X)));
                                                 }
                                                 else
                                                 {
                                                     if (GS.Has("Y"))
                                                     {
-                                                        Y = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
+                                                        Y += File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
                                                         OutLine = String.Format("Y{0}", GNF.Format(GNF._ScaleMMToFile(Y)));
                                                     }
                                                     else
@@ -995,7 +1139,7 @@ namespace GerberLibrary
                                             }
                                             if (GS.Has("J"))
                                             {
-                                                var J  = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("J"));
+                                                var J = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("J"));
                                                 OutLine += String.Format("J{0}", GNF.Format(GNF._ScaleMMToFile(J)));
                                             }
                                             if (GS.Has("D"))
@@ -1017,12 +1161,20 @@ namespace GerberLibrary
                             break;
                     }
                 }
-                catch(Exception)
+                catch (Exception)
                 {
-                    
+
                 }
             }
             // TODO: set polarity back to "neutral" - or should each file do this at the start anyway? 
+
+            if (Repeating)
+            {
+                OutputLines.Add("G04 previous file was still repeating.. stopping that*");
+                OutputLines.Add("%SR*%");
+                Repeating = false;
+            }
+
             if (Gerber.ShowProgress)
             {
                 Log.AddString(String.Format("File 1 format: {0}", File1Parsed.State.CoordinateFormat));
@@ -1031,7 +1183,7 @@ namespace GerberLibrary
             OutputLines.Add("G04 next file*");
 
             if (CurrentPolarity != "LPD") { OutputLines.Add("%LPD*%"); CurrentPolarity = "LPD"; }
-
+            X = 0;Y = 0;
             //OutputLines.Add( String.Format("G04 :starting {0}", Path.GetFileNameWithoutExtension(file2)));
             for (int i = 0; i < File2Lines.Count; i++)
             {
@@ -1045,16 +1197,16 @@ namespace GerberLibrary
                     {
                         case '%':
                             {
-                                string FinalLine = (""+ CurrentLine).Replace("%", "").Replace("*", "").Trim();
+                                string FinalLine = ("" + CurrentLine).Replace("%", "").Replace("*", "").Trim();
                                 switch (FinalLine)
                                 {
                                     case "LPD":
                                         if (CurrentPolarity != "LPD") { OutputLines.Add("%LPD*%"); CurrentPolarity = "LPD"; }
-                                        
+
                                         break;
                                     case "LPC":
-                                      if (CurrentPolarity != "LPC") { OutputLines.Add("%LPC*%" ); CurrentPolarity = "LPC"; }
-                                        
+                                        if (CurrentPolarity != "LPC") { OutputLines.Add("%LPC*%"); CurrentPolarity = "LPC"; }
+
 
                                         break;
 
@@ -1091,10 +1243,10 @@ namespace GerberLibrary
                                         case 2:
                                         case 3:
                                             {
-                                               //double X = 0;
-                                           //     double Y = 0;
-                                              // GS.Split(GCC.originalline, File2Parsed.State.CoordinateFormat);
-                                               GS.ScaleToMM(File2Parsed.State.CoordinateFormat);
+                                                //double X = 0;
+                                                //     double Y = 0;
+                                                // GS.Split(GCC.originalline, File2Parsed.State.CoordinateFormat);
+                                                GS.ScaleToMM(File2Parsed.State.CoordinateFormat);
                                                 GS.ScaleToFile(GNF);
                                                 //         if (GS.Has("X")) GS.Set("X", File2Parsed.CoordinateFormat.ScaleFileToMM(GS.Get("X")));
                                                 //        if (GS.Has("Y")) GS.Set("Y", File2Parsed.CoordinateFormat.ScaleFileToMM(GS.Get("Y")));
@@ -1103,22 +1255,23 @@ namespace GerberLibrary
                                                 OutputLines.Add(GS.Rebuild(GNF));
                                                 //   Log.AddString("Unsupported arc command found!");
                                                 //  MessageBox.Show("Unsupported arc type found during merge! File will NOT be exported correctly!", "Error during export", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                                            } break;
+                                            }
+                                            break;
                                         default:
-                                        
-                                       
-                                        
-                                        switch ((int)GS.Get("G"))
+
+
+
+                                            switch ((int)GS.Get("G"))
                                             {
                                                 case 70:
                                                     OutputLines.Add("G04 skipping 70");
                                                     File2Parsed.State.CoordinateFormat.SetImperialMode();
-                                     
+
                                                     break;
                                                 case 71:
                                                     OutputLines.Add("G04 skipping 71");
                                                     File2Parsed.State.CoordinateFormat.SetMetricMode();
-                                     
+
                                                     break;
                                                 default:
                                                     OutputLines.Add(CurrentLine);
@@ -1132,8 +1285,11 @@ namespace GerberLibrary
                         default: // move commands -> transform 
                             {
                                 GerberSplitter GS = new GerberSplitter();
-                                double X = 0;
-                                double Y = 0;
+                                if (File2Parsed.State.CoordinateFormat.Relativemode == false)
+                                {
+                                    X = 0;
+                                    Y = 0;
+                                }
                                 GS.Split(GCC.originalline, File2Parsed.State.CoordinateFormat);
 
 
@@ -1155,8 +1311,8 @@ namespace GerberLibrary
                                             if (GS.Has("X") && GS.Has("Y"))
                                             {
 
-                                                X = File2Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
-                                                Y = File2Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
+                                                X += File2Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
+                                                Y += File2Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
 
                                                 OutLine = String.Format("X{0}Y{1}", GNF.Format(GNF._ScaleMMToFile(X)), GNF.Format(GNF._ScaleMMToFile(Y)));
                                             }
@@ -1164,14 +1320,14 @@ namespace GerberLibrary
                                             {
                                                 if (GS.Has("X"))
                                                 {
-                                                    X = File2Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
+                                                    X += File2Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
                                                     OutLine = String.Format("X{0}", GNF.Format(GNF._ScaleMMToFile(X)));
                                                 }
                                                 else
                                                 {
                                                     if (GS.Has("Y"))
                                                     {
-                                                        Y = File2Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
+                                                        Y += File2Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
                                                         OutLine = String.Format("Y{0}", GNF.Format(GNF._ScaleMMToFile(Y)));
                                                     }
                                                     else
@@ -1203,7 +1359,7 @@ namespace GerberLibrary
                                             OutLine += "*";
                                             OutputLines.Add(OutLine);
 
-                                            
+
                                         }
                                     }
                                 }
@@ -1233,7 +1389,7 @@ namespace GerberLibrary
                                         {
                                             OutputLines.Add(CurrentLine);
                                         }
-                                        
+
                                     }
                                 }
                             }
@@ -1245,6 +1401,12 @@ namespace GerberLibrary
                 catch (Exception) { }
             }
 
+            if (Repeating)
+            {
+                OutputLines.Add("G04 previous file was still repeating.. stopping that*");
+                OutputLines.Add("%SR*%");
+                Repeating = false;
+            }
 
             OutputLines.Add(Gerber.EOF);
             Gerber.WriteAllLines(output, PolyLineSet.SanitizeInputLines(OutputLines));
@@ -1253,7 +1415,7 @@ namespace GerberLibrary
         }
 
 
-        public static void WriteContainedOnly(string inputfile,PolyLine Boundary, string outputfilename, ProgressLog Log)
+        public static void WriteContainedOnly(string inputfile, PolyLine Boundary, string outputfilename, ProgressLog Log)
         {
             Log.PushActivity("Gerber Clipper");
             if (File.Exists(inputfile) == false)
@@ -1262,7 +1424,7 @@ namespace GerberLibrary
                 Log.PopActivity();
                 return;
             }
-           
+
 
             Log.AddString(String.Format("Clipping {0} to {1}", Path.GetFileName(inputfile), Path.GetFileName(outputfilename)));
             List<string> File1Lines = File.ReadAllLines(inputfile).ToList();
@@ -1301,19 +1463,21 @@ namespace GerberLibrary
 
             foreach (var a in File1Parsed.State.ApertureMacros)
             {
-                OutputLines.Add(a.Value.BuildGerber(GNF, 0).Trim());
-                MacroDict[a.Value.Name + "____"] = a.Value.Name;
+                OutputLines.Add(a.Value.BuildGerber(GNF, 0,"_FILE0").Trim());
+                MacroDict[a.Value.Name + "_FILE0"] = a.Value.Name;
             }
 
-          
+
             foreach (var a in File1Parsed.State.Apertures)
             {
-                OutputLines.Add(a.Value.BuildGerber(GNF));
+                OutputLines.Add(a.Value.BuildGerber(GNF,"_FILE0"));
             }
 
             // stuff goes here.
             //OutputLines.Add(String.Format("G04 :starting {0}", Path.GetFileNameWithoutExtension(file1)));
             string CurrentPolarity = "LPD";
+            double X = 0;
+            double Y = 0;
             for (int i = 0; i < File1Lines.Count; i++)
             {
                 string CurrentLine = File1Lines[i];
@@ -1375,15 +1539,15 @@ namespace GerberLibrary
                                     if (GS.Has("X") && GS.Has("Y"))
                                     {
 
-                                        double X = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
-                                        double Y = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
+                                        X += File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
+                                        Y += File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
 
                                         if (Boundary.PointInPoly(new PointD(X, Y)) == false)
                                         {
                                             skipline = true;
                                         }
 
-                                     //   OutLine = String.Format("X{0}Y{1}", GNF.Format(GNF._ScaleMMToFile(X)), GNF.Format(GNF._ScaleMMToFile(Y)));
+                                        //   OutLine = String.Format("X{0}Y{1}", GNF.Format(GNF._ScaleMMToFile(X)), GNF.Format(GNF._ScaleMMToFile(Y)));
                                     }
                                     if (!skipline) OutputLines.Add(GS.Rebuild(GNF));
                                     //   Log.AddString("Unsupported arc command found!");
@@ -1430,8 +1594,11 @@ namespace GerberLibrary
                         default: // move commands -> transform 
                             {
                                 GerberSplitter GS = new GerberSplitter();
-                                double X = 0;
-                                double Y = 0;
+                                if (File1Parsed.State.CoordinateFormat.Relativemode == false)
+                                {
+                                    X = 0;
+                                    Y = 0;
+                                }
                                 GS.Split(GCC.originalline, File1Parsed.State.CoordinateFormat);
 
                                 if (GS.Has("D") || GS.Has("X") || GS.Has("Y"))
@@ -1444,7 +1611,7 @@ namespace GerberLibrary
                                     {
                                         if (GS.Has("X") == false && GS.Has("Y") == false)
                                         {
-                                            
+
                                             OutputLines.Add(CurrentLine);
                                         }
                                         else
@@ -1454,10 +1621,10 @@ namespace GerberLibrary
                                             if (GS.Has("X") && GS.Has("Y"))
                                             {
 
-                                                X = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
-                                                Y = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
+                                                X += File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
+                                                Y += File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
 
-                                                if (Boundary.PointInPoly(new PointD(X,Y)) == false)
+                                                if (Boundary.PointInPoly(new PointD(X, Y)) == false)
                                                 {
                                                     skipline = true;
                                                 }
@@ -1468,14 +1635,14 @@ namespace GerberLibrary
                                             {
                                                 if (GS.Has("X"))
                                                 {
-                                                    X = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
+                                                    X += File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("X"));
                                                     OutLine = String.Format("X{0}", GNF.Format(GNF._ScaleMMToFile(X)));
                                                 }
                                                 else
                                                 {
                                                     if (GS.Has("Y"))
                                                     {
-                                                        Y = File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
+                                                        Y += File1Parsed.State.CoordinateFormat.ScaleFileToMM(GS.Get("Y"));
                                                         OutLine = String.Format("Y{0}", GNF.Format(GNF._ScaleMMToFile(Y)));
                                                     }
                                                     else
@@ -1526,15 +1693,15 @@ namespace GerberLibrary
             if (Gerber.ShowProgress)
             {
                 Log.AddString(String.Format("File 1 format: {0}", File1Parsed.State.CoordinateFormat));
-               
+
             }
             OutputLines.Add("G04 next file*");
 
             if (CurrentPolarity != "LPD") { OutputLines.Add("%LPD*%"); CurrentPolarity = "LPD"; }
 
             //OutputLines.Add( String.Format("G04 :starting {0}", Path.GetFileNameWithoutExtension(file2)));
-   
-        
+
+
 
             OutputLines.Add(Gerber.EOF);
             Gerber.WriteAllLines(outputfilename, PolyLineSet.SanitizeInputLines(OutputLines));

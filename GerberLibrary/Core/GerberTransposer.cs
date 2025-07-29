@@ -138,7 +138,7 @@ namespace GerberLibrary
 
                     var M = Parsed.State.ApertureMacros[name];
                     M.Written = true;
-                    var gerb = M.BuildGerber(CoordinateFormat, AngleInDeg).Split('\n');
+                    var gerb = M.BuildGerber(CoordinateFormat, AngleInDeg, "" ).Split('\n');
                     foreach (var l in gerb)
                     {
                         if (l.Trim().Length > 0)
@@ -173,7 +173,7 @@ namespace GerberLibrary
                         int ATID = (int)GCC.numbercommands[0];
                         var Aperture = Parsed.State.Apertures[ATID];
                         if (Gerber.ShowProgress) log.AddString(String.Format("found " + Aperture.ToString()));
-                        string gerb = Aperture.BuildGerber(CoordinateFormat, AngleInDeg);
+                        string gerb = Aperture.BuildGerber(CoordinateFormat, "", AngleInDeg);
 
                         if ((Aperture.ShapeType == GerberApertureShape.Compound || Aperture.ShapeType == GerberApertureShape.Macro) && Parsed.State.ApertureMacros[Aperture.MacroName].Written == false)
                         {
@@ -247,7 +247,7 @@ namespace GerberLibrary
                                 }
                             }
                             moveswritten++;
-                            log.AddString(String.Format("Pure D Code: {0}", lines[i]));
+                            //log.AddString(String.Format("Pure D Code: {0}", lines[i]));
                         }
                         else
                         if (GS.Has("X") || GS.Has("Y") || (GS.Has("D") && GS.Get("D") < 10))
@@ -310,7 +310,7 @@ namespace GerberLibrary
                         outlines.Add(GS.Rebuild(CoordinateFormat));
                         if (PureD)
                         {
-                            log.AddString(String.Format("pureD"));
+                            //log.AddString(String.Format("pureD"));
                         }
 
                     }

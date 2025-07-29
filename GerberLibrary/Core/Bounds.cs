@@ -124,6 +124,11 @@ namespace GerberLibrary
             return new PointD((TopLeft.X + BottomRight.X) * 0.5, (TopLeft.Y + BottomRight.Y) * 0.5);
         }
 
+        public PointD Center()
+        {
+            return Middle();
+        }
+
         public void Reset()
         {
             TopLeft.X = 10000;
@@ -138,6 +143,7 @@ namespace GerberLibrary
         {
             return String.Format("({0:N2}, {1:N2}) - ({2:N2}, {3:N2}) -> {4:N2} x {5:N2} mm", TopLeft.X, TopLeft.Y, BottomRight.X, BottomRight.Y, Width(), Height());
         }
+
         public double Width()
         {
             if (!Valid) return 0;

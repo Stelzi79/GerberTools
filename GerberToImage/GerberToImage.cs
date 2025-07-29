@@ -34,11 +34,11 @@ namespace GerberToImage
                 Console.WriteLine("GerberToImage <files> [--dpi N] [--noxray] [--nopcb] [--silk color] [--trace color] [--copper color] [--mask color]");
                 return;
             }
-
+         
             int dpi = 400;
             Arguments NextArg = Arguments.None;
             bool xray = true;
-               bool normal = true;
+            bool normal = true;
             string pcbcolor = "green";
             string silkcolor = "white";
             string tracecolor = "auto";
@@ -57,12 +57,19 @@ namespace GerberToImage
                     case Arguments.None:
                         switch (args[i].ToLower())
                         {
+                            case "-dpi":
                             case "--dpi": NextArg = Arguments.dpi; break;
+                            case "-silk": 
                             case "--silk": NextArg = Arguments.silk;break;
+                            case "-trace":
                             case "--trace": NextArg = Arguments.trace; break;
+                            case "-copper":
                             case "--copper": NextArg = Arguments.copper; break;
+                            case "-mask":
                             case "--mask": NextArg = Arguments.mask; break;
+                            case "-noxray":
                             case "--noxray": xray = false; NextArg = Arguments.None; break;
+                            case "-nopcb":
                             case "--nopcb": normal = false; NextArg = Arguments.None; break;
 
                             default:
@@ -72,19 +79,19 @@ namespace GerberToImage
                 }
             }
 
-
             Gerber.SaveIntermediateImages = false;
-            Gerber.ShowProgress = false;
+            Gerber.ShowProgress = true;
 
             if (RestList.Count() == 1 && File.Exists(RestList[0]) && Path.GetExtension(RestList[0]).ToLower()!= ".zip")
             {
               //  Gerber.WriteSanitized = true;
                 Gerber.ExtremelyVerbose = false;
                 //Gerber.Verbose = true;
+                Gerber.ThrowExceptions = true;
                 Gerber.WaitForKey = true;
                 Gerber.ShowProgress = true;
 
-               CreateImageForSingleFile(new StandardConsoleLog(),RestList[0], Color.Black, Color.White);
+               CreateImageForSingleFile(new StandardConsoleLog(),RestList[0], Color.Black, Color.White,dpi);
                 if (Gerber.WaitForKey)
                 {
                     Console.WriteLine("Press any key to continue");
@@ -133,10 +140,9 @@ namespace GerberToImage
             GIC.SetColors(colors);
             GIC.WriteImageFiles(TargetFileBaseName, dpi, false, xray, normal, new StandardConsoleLog());
             Console.WriteLine("Done writing {0}", TargetFileBaseName);
-       //    Console.ReadKey();
         }
 
-        private static void CreateImageForSingleFile(ProgressLog log, string arg, Color Foreground, Color Background)
+        private static void CreateImageForSingleFile(ProgressLog log, string arg, Color Foreground, Color Background, float dpi = 1000)
         {
             
             if (arg.ToLower().EndsWith(".png") == true) return;
@@ -144,16 +150,16 @@ namespace GerberToImage
             //Gerber.Verbose = true;
             if (Gerber.ThrowExceptions)
             {
-                Gerber.SaveGerberFileToImageUnsafe(log, arg, arg + "_render.png", 1000, Foreground, Background);
+                Gerber.SaveGerberFileToImageUnsafe(log, arg, arg + "_render.png", dpi, Foreground, Background);
             }
             else
             {
-                Gerber.SaveGerberFileToImage(log, arg, arg + "_render.png", 1000, Foreground, Background);
+                Gerber.SaveGerberFileToImage(log, arg, arg + "_render.png", dpi, Foreground, Background);
             }
 
             if (Gerber.SaveDebugImageOutput)
             {
-                Gerber.SaveDebugImage(arg, arg + "_debugviz.png", 1000, Foreground, Background, new StandardConsoleLog());
+                Gerber.SaveDebugImage(arg, arg + "_debugviz.png", dpi, Foreground, Background, new StandardConsoleLog());
             }
         }
 

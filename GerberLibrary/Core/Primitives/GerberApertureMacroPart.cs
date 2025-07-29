@@ -8,6 +8,16 @@ namespace GerberLibrary.Core.Primitives
 {
     public class GerberApertureMacroPart
     {
+
+        public override string ToString()
+        {
+            switch(Type)
+            {
+                case ApertureMacroTypes.CenterLine: return String.Format("Circle {0},{1} - {2}", Xoff, Yoff, Diameter);
+                case ApertureMacroTypes.Circle: return String.Format("Circle {0},{1} - {2}", Xoff, Yoff, Diameter);
+            }
+            return String.Format("{0}", Type);
+        }
         public enum ApertureMacroTypes
         {
             Circle = 1,
@@ -387,6 +397,7 @@ namespace GerberLibrary.Core.Primitives
 
                         }
                         srccopy = srccopy.Replace("X", "*");
+                        srccopy = srccopy.Replace("x", "*");
                         MacroExpressionEvaluator E = new MacroExpressionEvaluator();
                         for (int i = 0; i < paramlist.Count(); i++)
                         {
@@ -420,7 +431,7 @@ namespace GerberLibrary.Core.Primitives
                         Sides = (int)Params[2].BuildValue(paramlist);
                         var diamvalue = Params[5].BuildValue(paramlist);
                         Diameter = GNF.ScaleFileToMM(diamvalue);
-                        Rotation = Params[6].BuildValue(paramlist);
+                        Rotation = Params.Count>6? Params[6].BuildValue(paramlist):0;
                         Xoff = GNF.ScaleFileToMM(Params[3].BuildValue(paramlist));
                         Yoff = GNF.ScaleFileToMM(Params[4].BuildValue(paramlist));
                         AT.NGon(Sides, Diameter / 2, Xoff, Yoff, Rotation);
@@ -434,10 +445,28 @@ namespace GerberLibrary.Core.Primitives
                 case ApertureMacroTypes.Outline:
                     if (Gerber.ShowProgress) Console.WriteLine("Making an aperture for outline. {0} params. {1} in paramlist", Params.Count, paramlist.Count());
                     OutlineVerticesPostProc = new List<PointD>();
-                    foreach(var a in OutlineVertices)
+                    double ParamRotation = 0;
+                    if (OutlineRotationExprEnabled)
                     {
-                        OutlineVerticesPostProc.Add(a.Get(paramlist));
-                        
+                        int par = -1;
+                        var Amp = new ApertureMacroParam(OutlineRotationExpr, -1, GNF, out par);
+                        ParamRotation = Amp.BuildValue(paramlist);
+                    }
+
+                     foreach (var a in OutlineVertices)
+                    {
+                        if (OutlineRotationExprEnabled)
+                        {
+                            OutlineVerticesPostProc.Add(a.Get(paramlist).Rotate(ParamRotation));
+
+
+                            //       ApertureMacroParam OExpr = new ()
+                        }
+                        else 
+                        {
+                            OutlineVerticesPostProc.Add(a.Get(paramlist));
+                        }
+
                     }
                     AT.SetCustom(OutlineVerticesPostProc);
                     break;
@@ -446,9 +475,9 @@ namespace GerberLibrary.Core.Primitives
                     {
                         if (Gerber.ShowProgress) Console.WriteLine("Making an aperture for circle. {0} params. {1} in paramlist", Params.Count, paramlist.Count());
                         Diameter = GNF.ScaleFileToMM(Params[2].BuildValue(paramlist));
-                        Xoff = GNF.ScaleFileToMM(Params[3].BuildValue(paramlist));
-                        Yoff = GNF.ScaleFileToMM(Params[4].BuildValue(paramlist));
-                        Rotation = GNF.ScaleFileToMM(Params[5].BuildValue(paramlist));
+                    Xoff = GNF.ScaleFileToMM(Params.Count > 3 ? Params[3].BuildValue(paramlist):0);
+                    Yoff = GNF.ScaleFileToMM(Params.Count > 4 ? Params[4].BuildValue(paramlist):0);
+                    Rotation = GNF.ScaleFileToMM(Params.Count > 5 ? Params[5].BuildValue(paramlist):0);
                     }
                     catch(Exception E)
                     {
@@ -473,9 +502,9 @@ namespace GerberLibrary.Core.Primitives
                         }
                         Width = GNF.ScaleFileToMM(Params[2].BuildValue(paramlist));
                         Height = GNF.ScaleFileToMM(Params[3].BuildValue(paramlist));
-                        Xoff = GNF.ScaleFileToMM(Params[4].BuildValue(paramlist));
-                        Yoff = GNF.ScaleFileToMM(Params[5].BuildValue(paramlist));
-                        Rotation = Params[6].BuildValue(paramlist);
+                        Xoff = GNF.ScaleFileToMM(Params.Count > 4 ? Params[4].BuildValue(paramlist):0);
+                        Yoff = GNF.ScaleFileToMM(Params.Count > 5 ? Params[5].BuildValue(paramlist):0);
+                        Rotation = Params.Count > 6 ? Params[6].BuildValue(paramlist):0;
                         AT.SetRotatedRectangle(Width, Height, Rotation, Xoff, Yoff);
                         //AT.ShapeType = GerberApertureShape.CenterLine;
                     }
@@ -501,9 +530,9 @@ namespace GerberLibrary.Core.Primitives
 
                         Width = GNF.ScaleFileToMM(Params[2].BuildValue(paramlist));
                         Height = GNF.ScaleFileToMM(Params[3].BuildValue(paramlist));
-                        Xoff = GNF.ScaleFileToMM(Params[4].BuildValue(paramlist));
-                        Yoff = GNF.ScaleFileToMM(Params[5].BuildValue(paramlist));
-                        Rotation = Params[6].BuildValue(paramlist);
+                        Xoff = GNF.ScaleFileToMM(Params.Count > 4 ? Params[4].BuildValue(paramlist):0);
+                        Yoff = GNF.ScaleFileToMM(Params.Count > 5 ? Params[5].BuildValue(paramlist):0);
+                        Rotation = Params.Count > 6 ? Params[6].BuildValue(paramlist):0;
                     }
                     catch(Exception E)
                     {
@@ -522,7 +551,7 @@ namespace GerberLibrary.Core.Primitives
                     OuterDiameter = GNF.ScaleFileToMM(Params[3].BuildValue(paramlist));
                     InnerDiameter = GNF.ScaleFileToMM(Params[4].BuildValue(paramlist));
                     GapWidth = GNF.ScaleFileToMM(Params[5].BuildValue(paramlist));
-                    Rotation = Params[6].BuildValue(paramlist);
+                    Rotation = Params.Count > 6 ? Params[6].BuildValue(paramlist):0;
                     }
                     catch(Exception E)
                     {
@@ -557,7 +586,7 @@ namespace GerberLibrary.Core.Primitives
                     MaxRings = (int)Params[6].BuildValue(paramlist);
                     CrossHairThickness = GNF.ScaleFileToMM(Params[7].BuildValue(paramlist));
                     CrossHairLength = GNF.ScaleFileToMM(Params[8].BuildValue(paramlist));
-                    Rotation = GNF.ScaleFileToMM(Params[9].BuildValue(paramlist));
+                    Rotation = GNF.ScaleFileToMM(Params.Count > 9 ? Params[9].BuildValue(paramlist):0);
                     }
                     catch(Exception E)
                     {
@@ -598,7 +627,7 @@ namespace GerberLibrary.Core.Primitives
                         Yoff = GNF.ScaleFileToMM(Params[4].BuildValue(paramlist));
                         Xend = GNF.ScaleFileToMM(Params[5].BuildValue(paramlist));
                         Yend = GNF.ScaleFileToMM(Params[6].BuildValue(paramlist));
-                        Rotation = Params[7].BuildValue(paramlist);
+                        Rotation = Params.Count > 7 ? Params[7].BuildValue(paramlist):0;
 
 
                     }
@@ -619,6 +648,7 @@ namespace GerberLibrary.Core.Primitives
             AT.ShapeType = GerberApertureShape.Macro;
             AT.MacroName = Name;
 
+           
             return AT;
         }
         public class OutlineParameterPoint
@@ -647,6 +677,7 @@ namespace GerberLibrary.Core.Primitives
             }
         }
         public List<OutlineParameterPoint> OutlineVertices;
+        public double OutlineRotation;
         public List<PointD> OutlineVerticesPostProc;
         private double Xend;
         private double Yend;
@@ -658,30 +689,39 @@ namespace GerberLibrary.Core.Primitives
         private double CrossHairThickness;
         private double CrossHairLength;
 
+        int SaneIntParse(string inp)
+        {
+            if (inp.Contains('.'))
+            {
+                return Int32.Parse(inp.Split('.')[0]);
+            }
+            return Int32.Parse(inp);
+        }
         public void DecodeOutline(string line, GerberNumberFormat GNF)
         {
+            Decode(line, GNF);
+            //xqetqwet
             OutlineVertices = new List< OutlineParameterPoint>();
             string[] v = line.Split(',');
 
             //  if (Gerber.Verbose) Console.WriteLine("decoding {0}", lines[currentline]);
-            int vertices = Int32.Parse(v[2]) + 1;
+            int vertices = SaneIntParse(v[2]) + 1;
             if (Gerber.ShowProgress) Console.WriteLine("{0} vertices", vertices);
             int idx = 2;
             int i = 0;
             if ((v.Length - 3 - vertices * 2) < 0) vertices--;
             double X = 0;
             double Y = 0;
-            while (i < vertices && v[idx + 1].Contains("*") == false)
-            //            for (int i = 0; i < vertices; i++)
+            while (i < vertices && v[idx + 1].Contains("*") == false)            
             {
                 bool xparambound = false;
                 bool yparambound = false;
-                //                int xid = -1;
-                //int yid = -1;
+                
                 string xexpr = "";
                 string yexpr = "";
-
                 idx++;
+                
+                //  if (Gerber.Verbose) Console.Write("{1} Line [{0}] ", v[idx], idx);
                 //  if (Gerber.Verbose) Console.Write("{1}| reading X from {0}: ", idx, i);            
                 if (v[idx].Contains("$"))
                 {
@@ -696,8 +736,8 @@ namespace GerberLibrary.Core.Primitives
 
                      X = Gerber.ParseDouble(v[idx]);
                 }
-                //  if (Gerber.Verbose) Console.WriteLine(" {0} ", X);
                 idx++;
+                // if (Gerber.Verbose)  Console.Write(" X {0} ", X);
                 // if (Gerber.Verbose) Console.Write("{1}| reading Y from {0}: ", idx,i);            
                 if (v[idx].Contains("$"))
                 {
@@ -712,7 +752,7 @@ namespace GerberLibrary.Core.Primitives
                 {
                     Y = Gerber.ParseDouble(v[idx]);
                 }
-                //if (Gerber.Verbose) Console.WriteLine(" {0} ", Y);
+                //if (Gerber.Verbose)  Console.WriteLine(" Y {0} ", Y);
 
                 X = GNF.ScaleFileToMM(X);
                 Y = GNF.ScaleFileToMM(Y);
@@ -720,10 +760,38 @@ namespace GerberLibrary.Core.Primitives
                 i++;
 
             }
+            if (v.Length >= (vertices-1) * 2 + 5)
+            {
+                int rotationidx = v.Length - 1;
+                if (v[rotationidx].Contains("$"))
+                {
+                    Console.WriteLine("{0}", v[rotationidx]);
+                    OutlineRotationExprEnabled = true;
+                    int neg = 0;
+                    if (v[rotationidx][0] == '-') neg = 1;
+                    OutlineRotationExpr = v[rotationidx];
+
+                }
+                else
+                {
+                    OutlineRotation = Gerber.ParseDouble(v[rotationidx]);
+                    foreach (var ov in OutlineVertices)
+                    {
+                        ov.Point = ov.Point.Rotate(OutlineRotation);
+                    }
+                }
+
+           //     OutlineRotation = (Gerber.ParseDouble(v[v.Length-1]));
+                
+               
+
+                // rotate! 
+            }
 
             //       throw new NotImplementedException();
         }
-
+        string OutlineRotationExpr;
+        bool OutlineRotationExprEnabled = false;
         internal void DecodeCircle(string p, GerberNumberFormat GNF)
         {
             Decode(p, GNF);

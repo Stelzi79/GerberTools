@@ -15,7 +15,7 @@ namespace GerberLibrary
 
         public void Parse(string running, GerberNumberFormat form, bool hasdecimalpoint = false)
         {
-            if (Command == "G" || Command == "D" || Command == "M")
+            if (Command == "G" || Command == "D" || Command == "M" || Command == "R")
             {
                 Number = (double)Int32.Parse(running);
             }
@@ -23,6 +23,11 @@ namespace GerberLibrary
             {
                 Number = form.Decode(running, hasdecimalpoint);
             }
+        }
+
+        public override string ToString()
+        {
+            return $"{Command}{Number}";
         }
     }
 
@@ -60,6 +65,8 @@ namespace GerberLibrary
 
         public void Split(string p, GerberNumberFormat form, bool finddecimalpoint = false)
         {
+//            StandardConsoleLog L = new StandardConsoleLog();
+  //          L.PushActivity("Split");
             if (p.Length < 2) return;
             try
             {
@@ -71,6 +78,7 @@ namespace GerberLibrary
                     CommandsInOrder.Add(GNP.Command);
                     // line is a comment!
                     //           Console.WriteLine("comment: {0}", p.Substring(3));
+    //                L.PopActivity();
                     return;
                 }
                 bool wasnumber = false;
@@ -79,25 +87,32 @@ namespace GerberLibrary
                 string running = "";
                 for (int i = 0; i < p.Length; i++)
                 {
+                    
                     char current = p[i];
+      //              L.AddString(p[i].ToString());
                     if (char.IsNumber(current) || current == '+' || current == '-' || current == '.')
                     {
                         isnumber = true;
+        //                L.AddString(p[i].ToString() +" is a number" );
                     }
                     else
                     {
                         isnumber = false;
+          //              L.AddString(p[i].ToString() + " is not a number");
                     }
 
                     if (isnumber != wasnumber)
                     {
+            //            L.AddString("number state change!");
                         if (isnumber)
                         {
+              //              L.AddString("Setting up running command: " + running);
                             GNP.Command = running;
                             GNP.Orig = running;
                         }
                         else
                         {
+                //            L.AddString("trying to parse" + running);
                             GNP.Orig += running;
                             GNP.Parse(running, form, finddecimalpoint);
                             Pairs[GNP.Command] = GNP;
@@ -121,9 +136,10 @@ namespace GerberLibrary
             {
                 Console.WriteLine("this line does not seem to contain gerber: {0}", p);
             }
+//            L.PopActivity();
         }
 
-        internal void Set(string name, double val)
+        public void Set(string name, double val)
         {
             if (Has(name) == false)
             {
@@ -232,6 +248,33 @@ namespace GerberLibrary
                 }
             }
             return -1;
+        }
+        void MirrorIfExist(string N)
+        {
+            if (Has(N))
+            {
+                Set(N, -Get(N));
+            }
+        }
+        internal void ApplyMirroring(GerberParserState state)
+        {
+            if (state.MirrorA)
+            {
+                switch (state.AAxis)
+                {
+                    case GerberParserState.AxisName.X: MirrorIfExist("X"); break;
+                    case GerberParserState.AxisName.Y: MirrorIfExist("Y"); break;
+                }
+            }
+
+            if (state.MirrorB)
+            {
+                switch (state.BAxis)
+                {
+                    case GerberParserState.AxisName.X: MirrorIfExist("X"); break;
+                    case GerberParserState.AxisName.Y: MirrorIfExist("Y") ; break;
+                }
+            }
         }
     }
 

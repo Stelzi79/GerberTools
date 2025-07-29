@@ -28,11 +28,27 @@ namespace SolderTool
 
         }
 
+
+        public void UpdateCurrentPart()
+        {
+            BOM B = Main.GetBom();
+
+            if (B == null)
+            {
+                return;
+            }
+
+            int pc = B.GetPartCount(new List<string>() { });
+            CurrentPart = (CurrentPart + pc) % pc;
+            if (CurrentPart < 0) CurrentPart = 0;
+		}
+		
         public class ListItem
         {
             public string DispName;
+            
             public int useagecount;
-            public bool soldered;
+            public bool Soldered;
             public List<BOMEntry.RefDesc> RefDes;
         }
 
@@ -45,10 +61,11 @@ namespace SolderTool
                 foreach (var v in a.Value.Values)
                 {
 
-                    L.Add(new ListItem() { soldered = v.Soldered, DispName = v.Combined(), useagecount = v.RefDes.Count(), RefDes = v.RefDes });
+                    L.Add(new ListItem() { Soldered = v.Soldered, DispName = v.Combined(), useagecount = v.RefDes.Count(), RefDes = v.RefDes });
                 }
             }
-            return L.OrderBy(x =>x.soldered).ThenByDescending(x => x.useagecount).ToList();
+            return L.OrderBy(x =>x.Soldered).ThenByDescending(x => x.useagecount).ToList();
+
         }
 
         private void pictureBox1_Paint(object sender, PaintEventArgs e)
@@ -63,6 +80,7 @@ namespace SolderTool
             BOM B = Main.GetBom();
 
             Font F = new Font("Panton", 10);
+            Font SF = new Font("Panton", 6);
             if (B == null)
             {
                 G.DrawString("Not loaded..", F, Brushes.White, 2, 2);
@@ -77,7 +95,7 @@ namespace SolderTool
             {
                 string count = v.useagecount.ToString();
                 Brush Br = Brushes.Red;
-                if (v.soldered) Br = Brushes.Green;
+                if (v.Soldered) Br = Brushes.Green;
                 int y = 2 + i * 14;
                 if (i == CurrentPart)
                 {
@@ -96,6 +114,7 @@ namespace SolderTool
             int i = 0;
             var B = Main.GetBom();
             int pc = B.GetUniquePartCount(new List<string>() { });
+
             CurrentPart = (CurrentPart + pc) % pc;
             var PL = GetPartList();
             foreach (var v in PL)
@@ -170,7 +189,7 @@ namespace SolderTool
             {
                 if (i == CurrentPart)
                 {
-                    v.soldered = !v.soldered;
+                    v.Soldered = !v.Soldered;
 
                     foreach (var a in B.DeviceTree)
                     {
@@ -178,11 +197,11 @@ namespace SolderTool
                         {
                             if (vv.Value.Combined() == v.DispName)
                             {
-                                vv.Value.Soldered = v.soldered;
+                                vv.Value.Soldered = v.Soldered;
                             }
                         }
                     }
-                    if (v.soldered)
+                    if (v.Soldered)
                     {
                         Main.SolderPart(v.DispName);
                     }
